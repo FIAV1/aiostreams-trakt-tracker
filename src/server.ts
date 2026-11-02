@@ -1,0 +1,65 @@
+import fastify from 'fastify';
+import { TraktAuth } from './trakt/auth.js';
+import { TraktClient } from './trakt/client.js';
+import { DatabaseRepository } from './database/repository.js';
+import { authRoutes } from './api/auth.js';
+import { apiRoutes } from './api/health.js';
+import { watchStatePush, watchStatePull } from './api/watch-state.js';
+
+const PORT = process.env.PORT || 3000;
+const DATA_DIR = process.env.DATA_DIR || 'data';
+const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || 'your-client-id';
+const TRAKT_CLIENT_SECRET = process.env.TRAKT_CLIENT_SECRET || 'your-client-secret';
+const TRAKT_REDIRECT_URI = process.env.TRAKT_REDIRECT_URI || 'http://localhost:3000/auth/callback';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
+
+const app = fastify({ logger: { level: 'info' } });
+
+const config = {
+  clientId: TRAKT_CLIENT_ID,
+  clientSecret: TRAKT_CLIENT_SECRET,
+  redirectUri: TRAKT_REDIRECT_URI,
+  publicBaseUrl: PUBLIC_BASE_URL,
+};
+
+const traktAuth = new TraktAuth(config);
+const db = new DatabaseRepository(DATA_DIR);
+
+// We'll initialize traktClient lazily or after auth
+let traktClient: TraktClient;
+
+async function initializeTraktClient() {
+  const user = await db.getUser('default-user');
+  if (user) {
+    const tokens = {
+      accessToken: user.trakt_access_token,
+      refreshToken: user.trakt_refresh_token,
+      expiresAt: user.token_expires_at,
+    };
+    traktClient = new TraktClient(config, tokens);
+  } else {
+    // Use empty tokens initially
+    traktClient = new TraktClient(config, {
+      accessToken: '',
+      refreshToken: '',
+      expiresAt: 0,
+    });
+  }
+}
+
+app.addHook('onReady', async () => {
+  await initializeTraktClient();
+});
+
+authRoutes(app, traktAuth, db, config);
+apiRoutes(app);
+watchStatePush(app, db, traktClient, config);
+watchStatePull(app, db, traktClient, config);
+
+app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
+  if (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
+  console.log(`Trakt Sync server running on ${address}`);
+});

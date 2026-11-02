@@ -1,0 +1,27 @@
+services:
+  trakt-sync:
+    build: .
+    container_name: trakt-sync
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=/data/trakt-sync.db
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}
+      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
+    volumes:
+      - ./data:/data
+    networks:
+      - shared_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.trakt-sync.rule=Host(`trakt-sync.example.com`)"
+      - "traefik.http.routers.trakt-sync.entrypoints=websecure"
+      - "traefik.http.routers.trakt-sync.tls=true"
+      - "traefik.http.services.trakt-sync.loadbalancer.server.port=3000"
+
+networks:
+  shared_net:
+    external: true
