@@ -1,6 +1,6 @@
 services:
   trakt-sync:
-    build: .
+    image: ${TRACKER_IMAGE:-ghcr.io/fiav1/aiostreams-trakt-tracker:latest}
     container_name: trakt-sync
     restart: unless-stopped
     environment:

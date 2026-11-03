@@ -9,6 +9,10 @@ data/
 .env
 .env.*
 !.env.example
+!.env.test.example
+
+# Disposable AIOStreams/tracker test stack
+.test-data/
 
 # Logs and test caches
 *.log

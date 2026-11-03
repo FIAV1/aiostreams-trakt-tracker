@@ -59,6 +59,7 @@
 - [x] Complete installation and configuration guide.
 - [x] Document Trakt app registration instructions.
 - [x] Add GitHub Actions checks for clean Docker build/tests and repository artifact hygiene.
+- [x] Add an isolated, opt-in Docker Compose stack for manual AIOStreams integration testing.
 - [ ] Complete live end-to-end validation against a registered Trakt application and connected AIOStreams deployment.
 
 ## Remaining implementation notes

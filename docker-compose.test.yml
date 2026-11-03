@@ -1,0 +1,38 @@
+name: aiostreams-trakt-tracker-test
+
+services:
+  tracker-test:
+    build: .
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: /data/trakt-sync.db
+      TRAKT_CLIENT_ID: ${TRAKT_CLIENT_ID:?Set TRAKT_CLIENT_ID in .env.test}
+      TRAKT_CLIENT_SECRET: ${TRAKT_CLIENT_SECRET:?Set TRAKT_CLIENT_SECRET in .env.test}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set TOKEN_ENCRYPTION_KEY in .env.test}
+    volumes:
+      - ./.test-data/tracker:/data
+    ports:
+      - "127.0.0.1:${TRACKER_TEST_PORT:-3001}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  aiostreams-test:
+    image: ${AIOSTREAMS_IMAGE:-ghcr.io/viren070/aiostreams:latest}
+    environment:
+      BASE_URL: ${AIOSTREAMS_BASE_URL:-http://localhost:3002}
+      SECRET_KEY: ${AIOSTREAMS_SECRET_KEY:?Set AIOSTREAMS_SECRET_KEY in .env.test}
+      PORT: 3000
+      ALLOW_PRIVATE_URLS: "true"
+    volumes:
+      - ./.test-data/aiostreams:/app/data
+    ports:
+      - "127.0.0.1:${AIOSTREAMS_TEST_PORT:-3002}:3000"
+    depends_on:
+      tracker-test:
+        condition: service_healthy

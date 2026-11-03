@@ -22,10 +22,63 @@ jobs:
             echo "node_modules must not be committed"
             exit 1
           fi
-          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
-            echo ".env must not be committed"
+          for private_file in .env .env.test; do
+            if git ls-files --error-unmatch "$private_file" >/dev/null 2>&1; then
+              echo "$private_file must not be committed"
+              exit 1
+            fi
+          done
+          if git ls-files .test-data | grep -q .; then
+            echo ".test-data must not be committed"
             exit 1
           fi
 
       - name: Build and run test suite
         run: docker build --target test -t aiostreams-trakt-tracker:test .
+
+      - name: Validate Compose configurations
+        run: |
+          docker compose --env-file .env.example config --quiet
+          docker compose --env-file docker-compose.test.env.example -f docker-compose.test.yml config --quiet
+
+  publish-image:
+    name: Publish production image to GHCR
+    needs: verify
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/fiav1/aiostreams-trakt-tracker
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

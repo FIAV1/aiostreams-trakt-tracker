@@ -39,13 +39,32 @@ The development script reads `.env`. Open `http://<tracker-host>:3000/auth/login
 
 ## Docker Compose
 
+The Compose file pulls the production image from `ghcr.io/fiav1/aiostreams-trakt-tracker:latest`. The GitHub Actions pipeline publishes it after CI succeeds on pushes to `main` and `v*` version tags. To pin a release, set `TRACKER_IMAGE` in `.env`, for example `ghcr.io/fiav1/aiostreams-trakt-tracker:1.2.3`.
+
+After the first successful publish, check the package's settings on GitHub. If it is private, change its visibility to **Public** so Docker hosts can pull it anonymously. Public GHCR images can be pulled without authentication. See [package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) and [Container Registry access](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
 Set the same environment values in `.env`. The Compose file publishes the container port using `HOST_PORT` (default `3000`) and binds it to `HOST_BIND_IP` (default `127.0.0.1`, accessible only from the Docker host). If AIOStreams runs in a separate container, loopback binding will not let that container reach the tracker. Set `HOST_BIND_IP` to a private host address reachable from AIOStreams (for Docker Desktop, `host.docker.internal` resolves to the host, but the tracker still must bind to a reachable host interface) and restrict access with your firewall. If AIOStreams runs on another homelab machine, use the tracker's private LAN address and allow only that machine through the firewall. To sign in, your browser must also reach `/auth/login`; Trakt does not connect to the tracker. Do not configure router port forwarding. Docker documents that localhost-published ports are accessible only from the host; see [port publishing](https://docs.docker.com/engine/network/port-publishing/). Then run:
 
 ```sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 SQLite data is stored in the mounted `./data` directory. Back up that directory and keep `TOKEN_ENCRYPTION_KEY` with the backup.
+
+## Disposable AIOStreams integration stack
+
+For hands-on end-to-end checks, the repository includes [docker-compose.test.yml](docker-compose.test.yml). It starts an isolated tracker and the official AIOStreams image on a private Compose network, stores their data under `.test-data/`, and binds browser-facing ports to `127.0.0.1` only. It does not change the normal `docker-compose.yml` stack.
+
+Copy `docker-compose.test.env.example` to `.env.test`, then set your Trakt app credentials and generate two different 64-character keys with `openssl rand -hex 32` (one for the tracker, one for AIOStreams). Start the stack:
+
+```sh
+docker compose --env-file .env.test -f docker-compose.test.yml up -d --build
+```
+
+Open `http://localhost:3002/stremio/configure` to configure the local AIOStreams instance. Add the tracker using the internal URL `http://tracker-test:3000`; both containers share a private Compose network. The test AIOStreams container allows private URLs so it can reach that service name. Open `http://localhost:3001/auth/login` in your browser to connect the default Trakt viewer. You must approve the device code on Trakt; the tracker completes token polling and storage after approval.
+
+The test stack uses separate data directories. Stop it with `docker compose --env-file .env.test -f docker-compose.test.yml down`. To reset its stored state, stop the stack and remove `.test-data/`. Pin `AIOSTREAMS_IMAGE` in `.env.test` if you need repeatable tests across AIOStreams releases. Do not use this test configuration on a public AIOStreams instance: private URL access is enabled for the isolated local stack.
 
 ## AIOStreams
 

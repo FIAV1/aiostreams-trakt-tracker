@@ -18,6 +18,7 @@ FROM build AS production-deps
 RUN npm prune --omit=dev
 
 FROM node:22-slim AS runtime
+LABEL org.opencontainers.image.source="https://github.com/FIAV1/aiostreams-trakt-tracker"
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 DATABASE_URL=/data/trakt-sync.db
 WORKDIR /app
 COPY --from=build /app/package.json ./
