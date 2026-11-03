@@ -76,7 +76,6 @@ export class TraktClient {
 
     return { items: allItems };
   }
-  }
 
   async scrobble(videoId: string, progress: number, duration: number) {
     return this.request('/scrobble', {

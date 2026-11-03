@@ -1,30 +1,42 @@
 import type { FastifyInstance } from 'fastify';
+import type { WatchStateEvent } from '@aiostreams/addon-sdk';
 import { SyncEngine } from '../sync/engine.js';
 import { DatabaseRepository } from '../database/repository.js';
 import { TraktClient } from '../trakt/client.js';
 import type { TraktConfig } from '../trakt/config.js';
 
-export async function watchStatePush(fastify: FastifyInstance, db: DatabaseRepository, traktClient: TraktClient, config: TraktConfig) {
-  fastify.post('/watch_state/push/:type/:id', async (request, reply) => {
-    const { type, id } = request.params as any;
-    const event = request.body as any;
-    const viewer = request.query.viewer as string || undefined;
+interface PushQuery {
+  viewer?: string;
+}
 
-    try {
-      const syncEngine = new SyncEngine(db, traktClient);
-      await syncEngine.processEvent(viewer, event);
-      return reply.send({ success: true });
-    } catch (error: any) {
-      fastify.log.error(error);
-      return reply.status(500).send({ error: error.message });
+export async function watchStatePush(fastify: FastifyInstance, db: DatabaseRepository, traktClient: TraktClient, config: TraktConfig) {
+  fastify.post<{ Params: { type: string; id: string }; Querystring: PushQuery; Body: any }>(
+    '/watch_state/push/:type/:id',
+    async (request, reply) => {
+      const event = request.body as WatchStateEvent;
+      const viewer = request.query.viewer || 'default-user';
+
+      try {
+        const syncEngine = new SyncEngine(db, traktClient);
+        await syncEngine.processEvent(viewer, event);
+        return reply.send({ success: true });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.status(500).send({ error: error.message });
+      }
     }
-  });
+  );
+}
+
+interface PullQuery {
+  since?: string;
+  viewer?: string;
 }
 
 export async function watchStatePull(fastify: FastifyInstance, db: DatabaseRepository, traktClient: TraktClient, config: TraktConfig) {
-  fastify.get('/watch_state/pull', async (request, reply) => {
-    const since = request.query.since as string || '0';
-    const viewer = request.query.viewer as string || 'default-user';
+  fastify.get<{ Querystring: PullQuery }>('/watch_state/pull', async (request, reply) => {
+    const since = request.query.since || '0';
+    const viewer = request.query.viewer || 'default-user';
 
     try {
       const syncEngine = new SyncEngine(db, traktClient);

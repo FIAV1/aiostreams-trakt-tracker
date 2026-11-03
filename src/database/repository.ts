@@ -119,12 +119,20 @@ export class DatabaseRepository {
     return state;
   }
 
-  async createSyncEvent(event: any) {
+  async upsertSyncEvent(event: any) {
     await this.db.run(
       'INSERT OR REPLACE INTO sync_events (id, user_id, event_id, media_item_id, event_type, source, event_timestamp, status, retry_count, last_error, created_at, processed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [event.id, event.userId, event.eventId, event.mediaItemId, event.eventType, event.source, event.eventTimestamp instanceof Date ? event.eventTimestamp.getTime() : event.eventTimestamp, event.status, event.retryCount, event.lastError, event.createdAt instanceof Date ? event.createdAt.getTime() : event.createdAt, event.processedAt instanceof Date ? event.processedAt.getTime() : event.processedAt]
+      [event.id, event.userId, event.eventId, event.mediaItemId, event.eventType, event.source, event.eventTimestamp instanceof Date ? event.eventTimestamp.getTime() : event.eventTimestamp, event.status, event.retryCount || 0, event.lastError, event.createdAt instanceof Date ? event.createdAt.getTime() : event.createdAt, event.processedAt instanceof Date ? event.processedAt.getTime() : event.processedAt]
     );
     return event;
+  }
+
+  async getSyncEvent(eventId: string) {
+    return this.db.get('SELECT * FROM sync_events WHERE event_id = ?', [eventId]);
+  }
+
+  async getLatestSyncEvent(userId: string) {
+    return this.db.get('SELECT * FROM sync_events WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', [userId]);
   }
 
   async getPendingSyncEvents(userId: string) {
