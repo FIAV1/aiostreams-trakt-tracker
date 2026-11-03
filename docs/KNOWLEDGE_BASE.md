@@ -4,6 +4,8 @@ This is the durable record of project decisions and operational facts that are e
 
 ## Product and protocol
 
+- The supported Node.js runtime baseline is Node.js 26 LTS across the Docker build and runtime images, with matching Node.js 26 type definitions. Upgrade the runtime and types together.
+
 - The tracker is a self-hosted bridge from AIOStreams Watch State v2 to Trakt.tv. AIOStreams supplies the viewer identifier; all tokens, state, queue entries, and sync results must remain viewer-scoped.
 - Supported synchronization includes playback progress, watched history, watchlists, and ratings. `dropped` remains local because Trakt has no universal dropped-state endpoint; syncing it to a custom list requires a separate product decision.
 - Conflict handling follows per-item Latest Action Wins with deterministic Jellyfin precedence on equal timestamps. Trakt-origin snapshots must not be echoed back as duplicate Trakt writes.
@@ -32,11 +34,12 @@ This is the durable record of project decisions and operational facts that are e
 
 ## Contribution and release policy
 
-- `main` should accept changes through PRs only. The repository includes an importable ruleset at `.github/rulesets/main-protection.json`; GitHub must have it imported for enforcement.
+- `main` should accept changes through PRs only. The branch ruleset from `.github/rulesets/main-protection.json` is active in GitHub (ID `26492305` as checked 2026-11-03). It requires PRs, `verify`, squash merges, and linear history, and blocks force pushes and deletion. This is a branch ruleset; GitHub's notice about **push rulesets** applies to a separate feature with different plan restrictions.
 - PR titles follow Conventional Commits because squash merge uses the title as the commit subject. `feat` maps to a minor bump, `fix` to patch, and `!`/`BREAKING CHANGE` to major. Release Please generates the changelog, version PR, tag, and GitHub Release.
 - Dependabot checks npm and GitHub Actions weekly; npm patch/minor updates are grouped, major updates stay separate, and PR title prefixes remain compatible with semantic validation.
 - The initial published version baseline is `1.0.0`, matching `package.json`. `.release-please-manifest.json` records this baseline and `.release-please-config.json` limits changelog history to commits after the bootstrap SHA.
-- Release Please can use the automatically provided `GITHUB_TOKEN`; a `RELEASE_PLEASE_TOKEN` fine-grained PAT or GitHub App token is optional. A dedicated token avoids GitHub's approval hold for workflows triggered by bot-created PRs, keeping required release PR checks automatic. Setup details and tradeoffs are in `docs/CONTRIBUTING.md`.
+- Release Please can use the automatically provided `GITHUB_TOKEN`; repository Actions settings must allow GitHub Actions to create and approve pull requests or release PR creation fails. A `RELEASE_PLEASE_TOKEN` fine-grained PAT or GitHub App token is optional. A dedicated token avoids GitHub's approval hold for workflows triggered by bot-created PRs, keeping required release PR checks automatic. Setup details and tradeoffs are in `docs/CONTRIBUTING.md`.
+- As of 2026-11-03, the owner enabled `can_approve_pull_request_reviews` for Actions. The failed Release Please run was retried successfully and opened PR #7 for version 1.1.0; its `verify` check passed. No repository Actions secrets were configured, so Release Please uses `GITHUB_TOKEN`. The GHCR publish job correctly waits until the release PR is merged and a GitHub Release is created.
 - GitHub Packages creates package visibility/access settings outside the repository workflow. Confirm the GHCR package is public if anonymous homelab pulls are desired.
 
 ## Current known limitation
