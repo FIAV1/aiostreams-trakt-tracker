@@ -118,7 +118,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release_please.outputs.tag_name }}
 
       - name: Build and push production image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
