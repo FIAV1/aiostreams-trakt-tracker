@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify repository artifacts
         shell: bash
@@ -93,7 +93,7 @@ jobs:
       packages: write
     steps:
       - name: Check out released source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.release_please.outputs.tag_name }}
 
