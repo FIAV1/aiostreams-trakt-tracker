@@ -19,19 +19,17 @@ export class TraktAuth {
     url.searchParams.set('state', state);
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
-    url.searchParams.set('scope', 'rebind');
     return url.toString();
   }
 
   async exchangeCodeForTokens(code: string, codeVerifier: string): Promise<TraktTokens> {
     const response = await fetch(TraktApiConfig.tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         grant_type: 'authorization_code',
         code,
         client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
         redirect_uri: this.config.redirectUri,
         code_verifier: codeVerifier,
       }),
@@ -52,12 +50,11 @@ export class TraktAuth {
   async refreshTokens(refreshToken: string): Promise<TraktTokens> {
     const response = await fetch(TraktApiConfig.tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
       }),
     });
 
@@ -71,5 +68,16 @@ export class TraktAuth {
       refreshToken: data.refresh_token,
       expiresAt: Date.now() + data.expires_in * 1000,
     };
+  }
+
+  async revokeToken(accessToken: string): Promise<void> {
+    const response = await fetch(`${TraktApiConfig.baseUrl}/oauth/revoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: accessToken, client_id: this.config.clientId, ...(this.config.clientSecret ? { client_secret: this.config.clientSecret } : {}) }),
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Trakt token revocation failed (${response.status}): ${await response.text()}`);
+    }
   }
 }

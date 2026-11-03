@@ -1,36 +1,37 @@
 # API Mapping
 
-## AIOStreams Push -> Trakt API
+## AIOStreams Push → Trakt
 
-| AIOStreams Event | Trakt API Endpoint | Operation | Notes |
-| :--- | :--- | :--- | :--- |
-| `start` | `/scrobbles` | POST | Start scrobbling |
-| `pause` | `/scrobbles` | POST | Pause scrobbling |
-| `stop` | `/scrobbles` | POST | Stop scrobbling |
-| `played` | `/sync/history` | POST | Add to watched history |
-| `unplayed` | `/sync/history` | DELETE | Remove from watched history |
-| `watchlisted` | `/sync/watchlist` | POST | Add to watchlist |
-| `unwatchlisted` | `/sync/watchlist` | DELETE | Remove from watchlist |
-| `rated` | `/sync/ratings` | POST | Set rating |
-| `unrated` | `/sync/ratings` | DELETE | Remove rating |
-| `dropped` | Custom List | POST | Add to "Dropped" custom list |
-| `undropped` | Custom List | DELETE | Remove from "Dropped" custom list |
+Trakt write calls use the documented JSON sync/scrobble payloads. Media identifiers are forwarded from the AIOStreams event (`ids.trakt`, `ids.imdb`, `ids.tmdb`, `ids.tvdb`); Trakt resolves those identifiers when matching media.
 
-## Trakt API -> AIOStreams Pull
+| AIOStreams event | Trakt request | Notes |
+| --- | --- | --- |
+| `start` | `POST /scrobble/start` | Item plus progress percentage |
+| `pause` | `POST /scrobble/pause` | Item plus progress percentage |
+| `stop` | Usually `POST /scrobble/stop`; `POST /sync/history` when AIOStreams says played below Trakt's threshold | AIOStreams owns the watched decision; an unplayed stop over Trakt's automatic threshold is sent as a pause to avoid a false watched record |
+| `played` | `POST /sync/history` | Movies or shows with nested season/episode data |
+| `unplayed` | `POST /sync/history/remove` | Removes matching history |
+| `watchlisted` | `POST /sync/watchlist` | Movies or shows |
+| `unwatchlisted` | `POST /sync/watchlist/remove` | Movies or shows |
+| `rated` | `POST /sync/ratings` | Ratings from 1 through 10 |
+| `unrated` | `POST /sync/ratings/remove` | Removes matching ratings |
+| `dropped` / `undropped` | Local SQLite state | A custom Trakt list is not configured yet |
 
-| Trakt API Endpoint | AIOStreams Field | Mapping Logic |
-| :--- | :--- | :--- |
-| `/sync/playback` | `items` | Map progress percentage to `positionMs` |
-| `/sync/history` | `watched` | Map Trakt history to `movies` and `episodes` |
-| `/sync/watchlist` | `watchlist` | Map Trakt watchlist to `type`, `metaId`, `at` |
-| `/sync/ratings` | `ratings` | Map Trakt ratings to `type`, `metaId`, `rating`, `at` |
-| Custom List | `dropped` | Map custom list members to `dropped` array |
+Bulk watched/unwatched events are filtered per episode by timestamp, then eligible episodes are grouped by season into one Trakt history request. Bulk parts retain their part-suffixed event IDs for idempotency. Both extensionless and `.json` push URLs are accepted.
 
-## Identifier Resolution
+## Trakt → AIOStreams Pull
 
-| Source ID | Trakt Resolution | Priority |
-| :--- | :--- | :--- |
-| IMDb ID (`tt...`) | `/search/movie` or `/search/show` | 1 |
-| TMDB ID | `/search/movie` or `/search/show` | 2 |
-| TVDB ID | `/search/movie` or `/search/show` | 3 |
-| Trakt ID | Direct lookup | 4 |
+| Trakt endpoint | AIOStreams field | Mapping |
+| --- | --- | --- |
+| `GET /sync/playback` | `items` | Progress and paused timestamp; runtime is converted from minutes to milliseconds |
+| `GET /sync/history` | `watched.movies`, `watched.episodes` | Movie IDs and episode IDs |
+| `GET /sync/watchlist` | `watchlist` | `type`, `kind`, `metaId`, and listing timestamp |
+| `GET /sync/ratings` | `ratings` | `type`, `metaId`, `rating`, and rating timestamp |
+| Local `dropped_state` | `watched.dropped` | Locally stored dropped IDs |
+| `GET /sync/last_activities` | `version` | Latest Trakt activity contributes to the incremental version |
+
+`GET /watch_state/pull` and `/watch_state/pull.json` accept `since` and `viewer`. Playback `items` are always returned; an unchanged `since` omits the version-gated `watched`, `watchlist`, and `ratings` blocks.
+
+## Identifier handling
+
+The service passes supported Trakt, IMDb, TMDB, and TVDB identifiers supplied in Watch State events directly to Trakt. If only `metaId` is supplied, recognized `imdb:tt...` or `provider:value` forms are converted. Trakt resolves supported external identifiers, so the addon does not need a separate lookup/cache service.

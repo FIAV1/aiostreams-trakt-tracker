@@ -1,6 +1,6 @@
 # Database Schema
 
-The database is implemented using SQLite and Drizzle ORM.
+The database is implemented with SQLite through the `sqlite` and `sqlite3` packages and parameterized SQL in `DatabaseRepository`. `src/database/schema.ts` is a reference declaration only.
 
 ## Tables
 
@@ -78,3 +78,21 @@ Synchronization checkpoints.
 - `media_item_id`: UUID (FK -> media_items.id)
 - `rating`: Float
 - `at`: Integer (Timestamp)
+
+### `dropped_state`
+- `user_id`: Viewer ID (FK -> users.id)
+- `media_item_id`: Media item ID (FK -> media_items.id)
+- `at`: Integer (Timestamp)
+
+### `sync_jobs`
+- `id`: Queue job ID (PK)
+- `user_id`: Viewer ID (FK -> users.id)
+- `event_id`: AIOStreams event ID (unique with `user_id`)
+- `payload`: Serialized, schema-validated Watch State event
+- `status`: `pending`, `processing`, `complete`, or `dead`
+- `attempts`: Retry count
+- `next_attempt_at`: Integer (Timestamp)
+- `last_error`: Text (Nullable)
+- `created_at`, `updated_at`: Integer (Timestamp)
+
+The repository applies versioned migrations transactionally at startup. Version 2 scopes sync event IDs to a viewer so different Trakt accounts cannot collide. OAuth token values are AES-256-GCM ciphertext; the encryption key is provided through `TOKEN_ENCRYPTION_KEY` and is never stored in SQLite.

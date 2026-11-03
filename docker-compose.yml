@@ -9,19 +9,11 @@ services:
       - DATABASE_URL=/data/trakt-sync.db
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
       - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}
+      - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET}
       - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI}
       - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
     volumes:
       - ./data:/data
-    networks:
-      - shared_net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.trakt-sync.rule=Host(`trakt-sync.example.com`)"
-      - "traefik.http.routers.trakt-sync.entrypoints=websecure"
-      - "traefik.http.routers.trakt-sync.tls=true"
-      - "traefik.http.services.trakt-sync.loadbalancer.server.port=3000"
-
-networks:
-  shared_net:
-    external: true
+    init: true
+    ports:
+      - "${HOST_BIND_IP:-127.0.0.1}:${HOST_PORT:-3000}:3000"

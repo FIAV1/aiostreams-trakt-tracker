@@ -1,83 +1,73 @@
-# AIOStreams Trakt Sync
+# AIOStreams Trakt Tracker
 
-A bidirectional synchronization bridge between Jellyfin (via AIOStreams Watch State v2 protocol) and Trakt.tv.
+A self-hosted bridge between AIOStreams Watch State v2 and Trakt.tv. It stores sync state in SQLite, encrypts OAuth tokens at rest, and processes push events through a durable retry queue.
 
-## Features
+## Requirements
 
-- **Bidirectional Sync**: Synchronize playback progress, watched history, watchlists, and ratings.
-- **Latest Action Wins**: Conflict resolution ensures the most recent user action is preserved.
-- **OAuth 2.0 PKCE**: Secure authentication with Trakt.tv.
-- **AIOStreams Protocol**: Full implementation of the Watch State v2 protocol.
-- **Dockerized**: Easy deployment with Docker Compose.
+- Node.js 22 or Docker with Docker Compose
+- A Trakt account and Trakt API application
+- A private HTTPS callback URL reachable from your browser during Trakt sign-in
 
-## Prerequisites
+## Configure Trakt OAuth
 
-- [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
-- A Trakt.tv account
-- A Trakt API Application (Client ID and Redirect URI)
+Create a Trakt API application at [Trakt Developer My Apps](https://developer.trakt.tv/apps). Register the exact HTTPS callback URL used by this service, for example `https://trakt-sync.home.arpa/auth/callback`, and copy the client ID. PKCE sign-in does not need the optional client secret. Trakt no longer accepts localhost redirect URIs, so use an HTTPS hostname your browser can reach, such as a private home-network hostname behind a reverse proxy.
 
-## Installation & Setup
-
-### 1. Trakt API Application
-1. Go to [Trakt API Apps](https://trakt.tv/oauth/applications).
-2. Create a new application.
-3. Set the **Redirect URI** to `https://your-domain.com/auth/callback` (replace `your-domain.com` with your actual domain).
-4. Note your **Client ID**.
-
-### 2. Configuration
-Create a `.env` file in the root directory:
+Create `.env` from `.env.example`, then set:
 
 ```env
-# Server Configuration
 PORT=3000
-PUBLIC_BASE_URL=https://your-domain.com
-
-# Trakt API Configuration
-TRAKT_CLIENT_ID=your_trakt_client_id
-TRAKT_REDIRECT_URI=https://your-domain.com/auth/callback
-
-# Security
-# Generate a random 32-character string for the encryption key
-TOKEN_ENCRYPTION_KEY=your_random_32_char_key
-
-# Database
-DATABASE_URL=/data/trakt-sync.db
+HOST=0.0.0.0
+PUBLIC_BASE_URL=https://trakt-sync.home.arpa
+TRAKT_CLIENT_ID=your_client_id
+TRAKT_CLIENT_SECRET=
+TRAKT_REDIRECT_URI=https://trakt-sync.home.arpa/auth/callback
+# Set this to the output of: openssl rand -hex 32
+TOKEN_ENCRYPTION_KEY=
+DATABASE_URL=./data/trakt-sync.db
+LOG_LEVEL=info
 ```
 
-### 3. Deployment
-Run the application using Docker Compose:
+Generate a strong encryption key with `openssl rand -hex 32`. This creates 32 random bytes encoded as 64 hexadecimal characters. If OpenSSL is unavailable, use `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Keep the key stable: changing it makes existing encrypted tokens unreadable. `trakt-sync.home.arpa` is a private home-network example; configure it in your LAN DNS and provide a trusted HTTPS certificate/reverse proxy, or replace it with your own private HTTPS hostname. See [RFC 8375](https://www.rfc-editor.org/rfc/rfc8375.html).
 
-```bash
-docker-compose up -d --build
+## Run locally
+
+```sh
+npm ci
+npm run dev
 ```
 
-## AIOStreams Configuration
+The development script reads `.env`. Open `https://trakt-sync.home.arpa/auth/login` through your private HTTPS reverse proxy to connect the default viewer. For a named AIOStreams viewer, use `/auth/login?viewer=<viewer-id>`.
 
-Add the following addon to your AIOStreams configuration:
+`GET /health` reports service health. `GET /manifest.json` serves the Watch State v2 manifest. Pushes are accepted only for a viewer that has connected a Trakt account.
 
-```json
-{
-  "id": "com.kamehouse.trakt-sync",
-  "url": "https://your-domain.com"
-}
+## Docker Compose
+
+Set the same environment values in `.env`. The Compose file publishes the container port using `HOST_PORT` (default `3000`) and binds it to `HOST_BIND_IP` (default `127.0.0.1`, accessible only from the Docker host). If AIOStreams runs on another homelab machine, set `HOST_BIND_IP` to the tracker host's private LAN address and restrict access to the AIOStreams host with your firewall. Do not configure router port forwarding. For Trakt login, provide an HTTPS callback route that your browser can reach over your LAN/VPN and that matches the registered redirect URI. Trakt redirects the browser to this callback; it does not connect to the tracker directly. Then run:
+
+```sh
+docker compose up -d --build
 ```
 
-## Authentication
+SQLite data is stored in the mounted `./data` directory. Back up that directory and keep `TOKEN_ENCRYPTION_KEY` with the backup.
 
-1. Once the service is running, navigate to `https://your-domain.com/auth/login`.
-2. Follow the prompts to authorize the application with your Trakt account.
-3. After successful authorization, your account will be linked.
+## AIOStreams
 
-## Architecture
+Install the addon using the base URL of this service. AIOStreams requests the manifest at `/manifest.json` and uses the Watch State push/pull routes. The manifest advertises viewer support.
 
-The service is built with:
-- **Node.js 22** & **TypeScript**
-- **Fastify** (Web Framework)
-- **SQLite** (Persistence)
-- **Trakt REST API** (Upstream Provider)
+The service supports playback progress, watched history, watchlists, and ratings. `dropped` entries are kept locally because Trakt does not provide a universal dropped-state endpoint; syncing them to a custom Trakt list is outside the current scope.
 
-For more details, see the [Architecture Documentation](docs/ARCHITECTURE.md).
+### Keep the tracker private
 
-## License
+The tracker does not need a public endpoint if your AIOStreams instance can reach it over your LAN, VPN, or a private Docker network. With the default `HOST_BIND_IP=127.0.0.1`, only programs on the Docker host can reach the published port. To allow another homelab host, bind to the tracker's private LAN IP and use a firewall rule that permits only AIOStreams (and your browser/proxy for OAuth sign-in). A remotely hosted AIOStreams instance cannot reach a private LAN address unless you provide a private route such as a VPN. For self-hosted AIOStreams, `ALLOW_PRIVATE_URLS` permits private addon URLs; keep it disabled on a public instance because it allows requests into that server's internal network.
 
-MIT
+This app currently connects Trakt with the PKCE redirect flow. Trakt requires an HTTPS, non-localhost callback. You can keep the callback private with an internal DNS name and trusted HTTPS certificate that your browser can reach during sign-in; the tracker itself can remain inaccessible from the public internet. The tracker does need outbound internet access to call Trakt's API. See [Trakt's PKCE redirect requirements](https://developer.trakt.tv/docs/pkce) and [AIOStreams' private URL setting](https://docs.aiostreams.viren070.me/configuration/environment-variables/#network).
+
+## Development commands
+
+```sh
+npm run typecheck
+npm run build
+npm test
+```
+
+See [the implementation plan](docs/IMPLEMENTATION_PLAN.md), [API mapping](docs/API_MAPPING.md), and [architecture](docs/ARCHITECTURE.md) for current scope and known gaps.

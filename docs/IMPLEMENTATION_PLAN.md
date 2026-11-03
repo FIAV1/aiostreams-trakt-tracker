@@ -8,50 +8,62 @@
 - [x] Produce architecture and mapping docs.
 
 ## Milestone 1: Application Foundation
-- [ ] Initialize TypeScript project with Fastify.
-- [ ] Set up SQLite with Drizzle ORM.
-- [ ] Implement database migrations.
-- [ ] Implement structured logging (Pino).
-- [ ] Implement health endpoint.
-- [ ] Configure Dockerfile and Docker Compose.
-- [ ] Implement basic addon manifest endpoint.
+- [x] Initialize TypeScript project with Fastify.
+- [x] Implement SQLite persistence through the `sqlite` / `sqlite3` repository (the runtime uses parameterized SQL; Drizzle is not required by the project guide).
+- [x] Implement versioned database migrations (schema versions 1 and 2 are applied transactionally at startup).
+- [x] Implement structured logging (Fastify/Pino).
+- [x] Implement health endpoint.
+- [x] Configure Dockerfile and Docker Compose.
+- [x] Implement basic addon manifest endpoint.
 
 ## Milestone 2: Trakt Authentication
-- [ ] Implement OAuth 2.0 PKCE flow.
-- [ ] Implement authorization callback and token exchange.
-- [ ] Implement secure token storage (encryption).
-- [ ] Implement automatic token refresh.
-- [ ] Implement account disconnection.
+- [x] Implement OAuth 2.0 PKCE flow.
+- [x] Implement authorization callback and token exchange.
+- [x] Implement secure token storage (AES-256-GCM encryption).
+- [x] Implement automatic token refresh.
+- [x] Implement account disconnection (revoke credentials while preserving local sync history).
 
 ## Milestone 3: Push Synchronization
-- [ ] Implement `/watch_state/push` endpoint.
-- [ ] Implement event validation and persistence.
-- [ ] Implement asynchronous event processing queue.
-- [ ] Implement Trakt scrobbling and history updates.
-- [ ] Implement watchlist and rating updates.
-- [ ] Implement bulk operation handling.
+- [x] Implement Watch State push endpoint.
+- [x] Validate events against the AIOStreams SDK schema and persist accepted jobs.
+- [x] Implement durable asynchronous event processing with retry.
+- [x] Implement Trakt scrobbling and history updates.
+- [x] Implement watchlist and rating updates.
+- [x] Handle bulk mark events with per-item conflict checks and grouped Trakt history writes.
+- [x] Preserve `dropped` state locally and return it through Watch State pull (Trakt has no universal dropped-state equivalent; custom-list sync is outside the current product scope).
 
 ## Milestone 4: Pull Synchronization
-- [ ] Implement `/watch_state/pull` endpoint.
-- [ ] Implement Trakt history and playback retrieval.
-- [ ] Implement identifier resolution (IMDb/TMDB/TVDB $\rightarrow$ Trakt).
-- [ ] Implement stable version generation.
-- [ ] Implement incremental synchronization logic.
+- [x] Implement Watch State pull endpoint.
+- [x] Retrieve Trakt history, playback, watchlist, and ratings.
+- [x] Pass supported IMDb/TMDB/TVDB/Trakt identifiers directly to Trakt for resolution (a separate lookup cache is unnecessary for supported IDs).
+- [x] Generate stable versions from local event identifiers and Trakt activity timestamps.
+- [x] Return unchanged responses using the `since` version.
+- [x] Persist and reconcile Trakt snapshots into local state before applying per-item timestamp precedence.
 
 ## Milestone 5: Conflict Resolution
-- [ ] Implement "Latest Action Wins" engine.
-- [ ] Implement event origin tracking.
-- [ ] Implement echo protection.
-- [ ] Implement timestamp reconciliation.
-- [ ] Implement conflict resolution test suite.
+- [x] Implement per-item timestamp conflict resolution across Jellyfin pushes and Trakt snapshots.
+- [x] Track event origin in persisted sync events.
+- [x] Record Trakt-origin state so repeated snapshots do not trigger duplicate writebacks.
+- [x] Apply timestamp ordering and deterministic Jellyfin precedence on equal timestamps.
+- [x] Implement unit coverage for event idempotency, timestamp precedence, viewer isolation, local-only dropped state, protocol routes/version gating, resume items, migrations/queue persistence, bulk history grouping, Trakt rating conversion, and concurrent token rotation.
 
 ## Milestone 6: Reliability and Multi-user
-- [ ] Implement retry queue with exponential backoff.
-- [ ] Implement Trakt API rate-limit management.
-- [ ] Implement multi-user support (AIOStreams `viewer` parameter).
-- [ ] Implement synchronization diagnostics.
+- [x] Implement retry queue with exponential backoff.
+- [x] Handle Trakt rate limits with bounded `Retry-After` retries.
+- [x] Implement multi-user support through the AIOStreams `viewer` parameter.
+- [x] Expose connection and queue status through `/api/status`.
 
 ## Milestone 7: Documentation and Release
-- [ ] Write installation and configuration guide.
-- [ ] Write Trakt app registration instructions.
-- [ ] Final end-to-end validation.
+- [x] Complete installation and configuration guide.
+- [x] Document Trakt app registration instructions.
+- [ ] Complete end-to-end validation.
+
+## Remaining implementation notes
+
+- The queue is durable in SQLite and retries failed jobs up to ten times before marking them dead.
+- SQLite persistence uses parameterized SQL in `DatabaseRepository`, as specified by the project guide. `src/database/schema.ts` is a reference declaration and is not used by the runtime.
+- `dropped` is retained locally and returned by pull; syncing it to a custom Trakt list would require a separate product policy.
+- Trakt account-wide activity timestamps cannot precisely order every remote deletion against every local item event.
+- End-to-end validation requires a registered Trakt app, HTTPS callback, and a connected AIOStreams/Jellyfin deployment.
+- The Docker `test` build target runs the complete Vitest suite against a clean Linux install; all 23 tests pass. The production image builds and a temporary container successfully initializes SQLite and serves `/health` with dummy OAuth configuration.
+- Live end-to-end validation still requires a registered Trakt app, a reachable HTTPS callback, and an AIOStreams instance connected to the tracker. Use a dedicated test Trakt account so sync checks do not change personal watch history, lists, or ratings.

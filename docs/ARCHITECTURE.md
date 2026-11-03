@@ -1,54 +1,36 @@
 # Trakt Sync Architecture
 
-## Overview
-The Trakt Sync service is a bidirectional synchronization bridge between Jellyfin (via AIOStreams Watch State v2 protocol) and Trakt.tv.
+## Runtime components
 
-## Core Components
+- `src/server.ts` loads required configuration, opens SQLite, registers routes, creates a durable sync worker, and handles shutdown.
+- `src/index.ts` defines and validates the AIOStreams addon manifest.
+- `src/api/auth.ts` implements viewer-scoped OAuth login/callback and account disconnection.
+- `src/api/watch-state.ts` validates Watch State v2 push events and builds pull responses from Trakt plus local state.
+- `src/api/health.ts` exposes health/status and `/manifest.json`.
+- `src/trakt/auth.ts` handles PKCE token exchange, refresh, and revocation.
+- `src/trakt/token-crypto.ts` encrypts/decrypts tokens with AES-256-GCM.
+- `src/trakt/client.ts` owns Trakt HTTP calls, headers, pagination, rate-limit retries, and payload construction.
+- `src/sync/queue.ts` persists accepted push events and retries them with exponential backoff.
+- `src/sync/engine.ts` applies pushed events, merges Trakt snapshots, and performs per-item timestamp conflict checks.
+- `src/database/repository.ts` creates and migrates SQLite tables transactionally, then implements persistence with parameterized SQL. `src/database/schema.ts` is a reference schema declaration and is not used at runtime.
 
-### 1. AIOStreams API (`src/api`)
-Handles the HTTP interface for the AIOStreams addon protocol.
-- `manifest.ts`: Defines the addon capabilities.
-- `watch-state-push.ts`: Receives events from Jellyfin.
-- `watch-state-pull.ts`: Provides state to AIOStreams.
-- `auth.ts`: Handles the OAuth flow redirection and callback.
+## Push flow
 
-### 2. Trakt Client (`src/trakt`)
-A wrapper around the Trakt REST API.
-- `client.ts`: Base HTTP client with rate limiting and error handling.
-- `auth.ts`: OAuth 2.0 PKCE implementation and token management.
-- `scrobble.ts`, `history.ts`, `playback.ts`, `watchlist.ts`, `ratings.ts`: Domain-specific API operations.
+1. AIOStreams POSTs an event to `/watch_state/push/:scope/:id.json` with an optional `viewer` query parameter; the extensionless form is also accepted.
+2. The server validates the event with the bundled AIOStreams SDK schema and checks that the viewer has connected Trakt.
+3. The payload is durably queued in SQLite; the endpoint acknowledges it after persistence.
+4. The queue worker calls `SyncEngine`, which compares the event timestamp to the latest stored event for each media item.
+5. A winning event is applied to Trakt and local state, then recorded with its origin. Failures are retried up to ten times.
 
-### 3. Sync Engine (`src/sync`)
-The heart of the service, implementing the "Latest Action Wins" strategy.
-- `engine.ts`: Orchestrates the flow between API and Trakt.
-- `conflict-resolution.ts`: Implements timestamp-based conflict resolution.
-- `event-processor.ts`: Processes events asynchronously.
-- `queue.ts`: Manages retries and event ordering.
+## Pull flow
 
-### 4. Database (`src/database`)
-Persistence layer using SQLite and Drizzle ORM.
-- `schema.ts`: Defines users, media items, playback state, and sync events.
-- `repository.ts`: Data access layer.
+1. AIOStreams GETs `/watch_state/pull` (or `/watch_state/pull.json`) with `viewer` and optional `since`.
+2. The server reads Trakt's last-activity timestamps and always returns up to 1,000 newest playback/resume `items`; active `start` events clear their resume item. When `since` matches it omits version-gated `watched`, `watchlist`, and `ratings` blocks.
+3. When the version changes, it fetches playback, history, watchlist, and ratings, merges timestamped Trakt state into local playback/audit records, then maps the result to Watch State v2.
+4. Locally stored dropped IDs are returned in the `watched.dropped` array.
 
-### 5. Identifier Mapping (`src/mapping`)
-Resolves IDs between AIOStreams (IMDb, TMDB, TVDB) and Trakt.
-- `identifiers.ts`: Logic for ID resolution and caching.
+## Persistence and limitations
 
-## Data Flow
+SQLite stores viewer credentials, media identifiers, playback state, event audit records, sync checkpoints, watchlist/ratings/dropped state, and durable queue jobs. OAuth tokens are encrypted at rest.
 
-### Push (Jellyfin -> Trakt)
-1. AIOStreams sends a POST request to `/watch_state/push`.
-2. API validates the event and persists it to `sync_events`.
-3. Sync Engine picks up the event.
-4. Identifier Mapping resolves the Trakt ID.
-5. Conflict Resolution checks if the event is the latest action.
-6. Trakt Client performs the API operation.
-7. Event status is updated to `processed`.
-
-### Pull (Trakt -> Jellyfin)
-1. AIOStreams sends a GET request to `/watch_state/pull`.
-2. API retrieves the current state from the database.
-3. If the version is stale, the Sync Engine fetches updates from Trakt.
-4. Trakt Client retrieves history, playback, and ratings.
-5. Sync Engine updates the local state and generates a new version.
-6. API returns the synchronized state.
+Conflict reconciliation uses timestamped local events and Trakt snapshots, with Jellyfin winning equal timestamps. Supported external IDs are sent directly to Trakt, which resolves them; no separate identifier cache is maintained. `dropped` is retained locally and returned through Watch State pull. Queue counts, including dead jobs, are available through `/api/status`. A live end-to-end check still requires an HTTPS Trakt callback and connected AIOStreams deployment.

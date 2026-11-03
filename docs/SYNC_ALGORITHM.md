@@ -1,40 +1,26 @@
 # Synchronization Algorithm
 
-## Latest Action Wins (LAW)
+## Latest Action Wins
 
-The core objective is to ensure that the most recent user action is preserved, regardless of the source.
+For a push event on a media item, the engine reads the latest successfully processed event for that viewer and item. The event timestamp is compared to the incoming timestamp:
 
-### Conflict Resolution Logic
+- A newer incoming Jellyfin event is sent to Trakt and persisted locally.
+- An older event is skipped.
+- At equal timestamps, Jellyfin takes precedence over Trakt snapshots.
 
-When a new event $E_{new}$ arrives for media item $M$:
+Trakt snapshots fetched during a full pull are written with source `trakt`. Bulk mark events are evaluated per episode so one episode's newer state does not suppress the rest of the bulk operation.
 
-1. **Idempotency Check**: If $E_{new}.id$ exists in `sync_events` with status `processed`, discard.
-2. **State Retrieval**: Fetch the latest known state $S_{current}$ for $M$ from `playback_state`.
-3. **Timestamp Comparison**:
-   - Let $T_{new} = E_{new}.timestamp$
-   - Let $T_{current} = S_{current}.source\_timestamp$
-4. **Decision**:
-   - If $T_{new} > T_{current}$:
-     - Apply $E_{new}$ to the local state.
-     - Push the update to the opposite provider (if not already the source).
-   - If $T_{new} < T_{current}$:
-     - Discard $E_{new}$ (it is a stale update).
-   - If $T_{new} == T_{current}$:
-     - Use a deterministic tie-breaker (e.g., `source` priority: Jellyfin > Trakt).
-5. **Persistence**: Update `playback_state` and mark $E_{new}$ as `processed`.
+## Idempotency and retries
 
-## Echo Protection
+Event IDs are recorded in SQLite, unique within each viewer. Bulk parts receive a part suffix. The durable job queue deduplicates by viewer and event ID, processes jobs in order, and retries failures with exponential delay. Jobs stop retrying after ten attempts and remain marked dead for diagnostics.
 
-To prevent infinite loops (Jellyfin $\rightarrow$ Trakt $\rightarrow$ Jellyfin):
+Trakt calls use direct provider IDs where available. The Trakt API handles matching IMDb, TMDB, TVDB, and Trakt IDs. The project does not yet maintain a separate ID-resolution cache.
 
-1. Every update pushed to a provider is tagged with a `system` source.
-2. The Sync Engine ignores events where the source is `system` or where the event timestamp matches a recently processed local update within a small grace window (e.g., 1 second).
-3. Use the `sync_events` table to track the origin of every state change.
+## Pull versions
 
-## Versioning (Pull Interface)
+The pull version combines the latest local audit event with the most recent activity timestamp returned by Trakt. A matching `since` version returns only the version field. A changed version triggers a full pull and state merge.
 
-The `watched_version` returned to AIOStreams is a hash of:
-- The timestamp of the last processed `sync_event` for the user.
-- The `last_trakt_activity` timestamp.
+## Current limits
 
-If the client's version matches the server's version, the server omits the `watched` block to save bandwidth.
+- `dropped` state is local-only; no custom Trakt list name is configured.
+- Trakt's activity feed is account-wide, so deletions without item-specific timestamps cannot be ordered precisely against every local event.
