@@ -1,59 +1,43 @@
-# Agents Guide: AIOStreams Trakt Tracker
+# Repository guidance for coding agents
 
-This document provides essential information for the development and maintenance of the AIOStreams Trakt Tracker addon.
+## Purpose
 
-## Project Overview
+This is a self-hosted AIOStreams Watch State v2 addon that synchronizes viewer-scoped playback state, watched history, watchlists, and ratings with Trakt. Preserve the existing protocol contract, data isolation, and safe retry behavior when changing the service.
 
-The AIOStreams Trakt Tracker is a self-hosted integration service that synchronizes viewing activity between Jellyfin and Trakt.tv using the AIOStreams Watch State v2 protocol.
+## Durable invariants
 
-### Core Objectives
-- Bidirectional synchronization of playback progress, watched status, watchlists, and ratings.
-- Implementation of the "Latest Action Wins" (LAW) conflict resolution strategy.
-- High reliability and idempotency to prevent synchronization loops.
+- Keep each AIOStreams `viewer` isolated across authentication, persisted state, push processing, and pull responses.
+- Validate Watch State events before queueing them. Preserve durable processing, retry limits, idempotency, and echo protection so retries and Trakt snapshots do not create loops or duplicate writes.
+- Resolve conflicts per item using the documented Latest Action Wins rules. Keep equal-timestamp behavior deterministic.
+- Use `better-sqlite3` through the repository layer with parameterized SQL. Add schema changes as transactional migrations; do not rewrite persisted history casually.
+- Trakt uses OAuth Device Code Flow. The tracker needs outbound HTTPS to Trakt, but no public callback or inbound Trakt connection. Keep OAuth tokens encrypted at rest and never log credentials, tokens, encryption keys, or verification codes.
+- Keep Docker runtime data under the persisted `/data` mount. The production Compose service pulls GHCR; the opt-in AIOStreams integration Compose file builds the local source and uses isolated data/network settings.
 
-## Technical Architecture
+## Work by context
 
-### Tech Stack
-- **Runtime**: Node.js (ESM)
-- **Framework**: Fastify
-- **Database**: SQLite (via `better-sqlite3` with parameterized SQL)
-- **Protocol**: AIOStreams Watch State v2
-- **External API**: Trakt REST API (OAuth 2.0 Device Code Flow)
+Read only the references relevant to the change:
 
-### Key Components
-- `TraktClient`: Handles all communication with the Trakt API, including pagination and rate limiting.
-- `SyncEngine`: The core logic for processing events, resolving conflicts, and managing the synchronization flow.
-- `DatabaseRepository`: Manages persistence for media items, playback states, and synchronization events.
-- `WatchStateAPI`: Implements the AIOStreams protocol endpoints (push/pull).
+- Service boundaries and protocol mapping: `docs/ARCHITECTURE.md`, `docs/API_MAPPING.md`.
+- Conflict rules: `docs/SYNC_ALGORITHM.md`.
+- Tables and migrations: `docs/DATABASE_SCHEMA.md`.
+- Product scope and unfinished work: `docs/IMPLEMENTATION_PLAN.md`.
+- Operational and historical decisions: `docs/KNOWLEDGE_BASE.md`.
+- Contribution, commit, and release process: `docs/CONTRIBUTING.md`.
 
-## Development Guide
+When a change alters durable behavior, operating assumptions, security boundaries, release steps, or an unresolved project decision, update the relevant documentation and `docs/KNOWLEDGE_BASE.md` in the same change. Keep this file concise and update it when repository-wide conventions or invariants change; do not add task-specific recipes here.
 
-### Local Development
-1. Install locked dependencies: `npm ci`
-2. Set up environment variables using `.env.example`.
-3. Run in development mode: `npm run dev`
-4. Run typecheck: `npm run typecheck`
+## Development and verification
 
-### Testing
-- Unit tests are located in `tests/unit/`; service integration tests are in `tests/integration/`.
-- Run tests using: `npx vitest run`
+- Runtime is Node.js 22 ESM, Fastify, TypeScript, SQLite via `better-sqlite3`, and the AIOStreams addon SDK.
+- Install locked dependencies with `npm ci`; run `npm run dev` for local development.
+- Run `npm run typecheck` and `npm test` for application changes. The Docker `test` target is the CI equivalent and also builds the production dependencies from a clean Linux install.
+- Validate `docker-compose.yml` and `docker-compose.test.yml` when changing container configuration. The latter is disposable and uses `.env.test` plus `.test-data/`; never put real secrets in tracked files.
+- Do not add dependencies or tests unrelated to the requested behavior. Do not claim live Trakt/AIOStreams validation unless performed with an explicitly configured test account and instance.
 
-### Adding New Features
-1. Update the `API_MAPPING.md` if new Trakt endpoints are needed.
-2. Implement the logic in `TraktClient` or `SyncEngine`.
-3. Add corresponding tests in `tests/unit/`.
-4. Update the AIOStreams manifest in `src/index.ts` if protocol capabilities change.
+## Contribution and release
 
-## Maintenance and Troubleshooting
-
-### Common Issues
-- **Native Dependencies**: `better-sqlite3` uses a platform-specific native binding. Use the provided Docker configuration for consistent builds.
-- **OAuth Tokens**: Ensure `TOKEN_ENCRYPTION_KEY` is consistent across restarts to avoid token decryption failures.
-- **Sync Loops**: Check `src/sync/engine.ts` for echo protection logic if loops are detected.
-
-### Deployment
-The project is designed to be deployed via Docker Compose. Ensure the `/data` volume is persisted to keep the SQLite database.
-
-## Protocol Reference
-- AIOStreams Watch State v2: [https://docs.aiostreams.viren070.me/reference/addon-protocol/watch-state/](https://docs.aiostreams.viren070.me/reference/addon-protocol/watch-state/)
-- Trakt API: [https://developer.trakt.tv/](https://developer.trakt.tv/)
+- Propose changes through pull requests to `main`. `docs/CONTRIBUTING.md` defines Conventional Commit pull request titles; squash merge makes that title the release input.
+- Release Please uses Conventional Commits for SemVer, updates `package.json`, `package-lock.json`, and `CHANGELOG.md`, then creates a version tag and GitHub Release. GHCR production images publish only for a validated release.
+- Dependabot checks npm and GitHub Actions weekly; keep its `chore(deps)` and `ci(deps)` PR title prefixes compatible with the semantic title check.
+- The importable `main` ruleset is in `.github/rulesets/main-protection.json`. GitHub repository settings are not controlled by this file until an owner imports it.
+- Keep the MIT license and package metadata aligned if licensing changes.

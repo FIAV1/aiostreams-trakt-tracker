@@ -59,8 +59,16 @@
 - [x] Complete installation and configuration guide.
 - [x] Document Trakt app registration instructions.
 - [x] Add GitHub Actions checks for clean Docker build/tests and repository artifact hygiene.
+- [x] Add MIT licensing and package metadata.
+- [x] Add Conventional Commit pull request title checks and Release Please SemVer automation.
+- [x] Add weekly Dependabot update pull requests for npm and GitHub Actions.
+- [x] Build and publish production GHCR images after validated releases.
+- [x] Add an importable GitHub ruleset that requires PRs and the verification check on `main`.
 - [x] Add an isolated, opt-in Docker Compose stack for manual AIOStreams integration testing.
+- [ ] Import the `main` protection ruleset in GitHub and configure the `RELEASE_PLEASE_TOKEN` Actions secret.
+- [ ] Confirm GHCR package visibility is public for anonymous pulls.
 - [ ] Complete live end-to-end validation against a registered Trakt application and connected AIOStreams deployment.
+- [ ] Review and update Trakt OAuth for current app registration: Trakt now recommends PKCE and its app guide describes Client ID-only setup, while this implementation's Device Code token exchange requires a Client Secret. Preserve private-network deployment and avoid introducing a public callback requirement if possible.
 
 ## Remaining implementation notes
 
@@ -72,3 +80,4 @@
 - The Docker `test` build target runs the complete Vitest suite against a clean Linux install; all 37 tests pass, including version 2 database upgrade and service-level integration coverage. The production image was started with dummy OAuth configuration and returned HTTP 200 at `/health` and `/manifest.json`.
 - Clean dependency installation and production dependency pruning report zero known npm vulnerabilities; obsolete `sqlite3`, Drizzle, and unused runtime dependencies have been removed.
 - Live end-to-end validation still requires a registered Trakt app, browser/AIOStreams reachability to the private tracker, and an AIOStreams instance connected to it. Use a dedicated test Trakt account so sync checks do not change personal watch history, lists, or ratings.
+- Trakt's current [app creation guide](https://developer.trakt.tv/docs/create-an-app) says app creation requires a verified GitHub account and recommends PKCE; its [OAuth guide](https://developer.trakt.tv/docs/authentication-oauth) says client secrets are deprecated for user sign-in. This tracker still uses Device Code Flow and includes a client secret in token exchange and refresh. Confirm compatibility with newly created Trakt apps before claiming current OAuth setup is fully validated; if the Trakt portal does not issue a client secret, OAuth migration is required.

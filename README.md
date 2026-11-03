@@ -1,5 +1,9 @@
 # AIOStreams Trakt Tracker
 
+[![CI](https://github.com/FIAV1/aiostreams-trakt-tracker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FIAV1/aiostreams-trakt-tracker/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/FIAV1/aiostreams-trakt-tracker?display_name=tag)](https://github.com/FIAV1/aiostreams-trakt-tracker/releases/latest)
+[![License](https://img.shields.io/github/license/FIAV1/aiostreams-trakt-tracker)](LICENSE)
+
 A self-hosted bridge between AIOStreams Watch State v2 and Trakt.tv. It stores sync state in SQLite, encrypts OAuth tokens at rest, and processes push events through a durable retry queue.
 
 ## Requirements
@@ -7,9 +11,18 @@ A self-hosted bridge between AIOStreams Watch State v2 and Trakt.tv. It stores s
 - Node.js 22 or Docker with Docker Compose
 - A Trakt API application with a client ID and client secret
 
-## Configure Trakt OAuth
+## Connect your Trakt account
 
-Create a Trakt API application at [Trakt Developer My Apps](https://developer.trakt.tv/apps) and copy its client ID and client secret. This tracker uses Trakt's Device Code Flow: the tracker requests a one-time code, you enter it on Trakt's HTTPS verification page, and the tracker polls Trakt for approval. No redirect URI, callback route, TLS certificate, or public tracker endpoint is needed. Trakt's API itself still requires outbound internet access from the tracker.
+The tracker obtains and refreshes the OAuth tokens for you. You do not need to create or paste an access token manually. First create a Trakt API app and configure the tracker with that app's credentials:
+
+1. Sign in to [Trakt](https://trakt.tv/) and open [Trakt Developer My Apps](https://developer.trakt.tv/apps).
+2. If prompted, connect and verify your GitHub account in the Developer panel. Trakt currently requires a verified GitHub account to create API apps; see [Trakt's app creation guide](https://developer.trakt.tv/docs/create-an-app).
+3. Choose **Create a new API app** and create an app. Copy its **Client ID**. The tracker’s current Device Code token exchange also requires a **Client Secret**; keep it on the tracker and never enter it in AIOStreams or publish it. Trakt's current [app guide](https://developer.trakt.tv/docs/create-an-app) describes the Client ID and recommends PKCE for sign-in, while this project has not yet migrated from its existing Device Code implementation. If Trakt does not provide a client secret for your app, this version cannot complete OAuth; see the current limitation in the [implementation plan](docs/IMPLEMENTATION_PLAN.md).
+4. Create `.env` from `.env.example` and set `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`, and `TOKEN_ENCRYPTION_KEY` as shown below. Generate the encryption key with `openssl rand -hex 32` (or the Node.js command below); it must stay stable across restarts because saved tokens are encrypted with it.
+5. Start the tracker (see [Run locally](#run-locally) or [Docker Compose](#docker-compose)). Open `http://<tracker-host>:3000/auth/login` in a browser. For a named AIOStreams viewer, use `http://<tracker-host>:3000/auth/login?viewer=<viewer-id>`.
+6. The tracker displays a one-time device code and Trakt verification link. Open the link, sign in to Trakt if asked, enter the code, and approve access. Leave the tracker login page open until it confirms the account is connected.
+
+The tracker polls Trakt and stores the resulting access and refresh tokens encrypted in its database. Device Code Flow does not need a redirect URI, callback route, TLS certificate, or public tracker endpoint. Your browser must reach the tracker, and the tracker needs outbound internet access to Trakt. See [Trakt's OAuth guide](https://developer.trakt.tv/docs/authentication-oauth) for details about the device flow.
 
 Create `.env` from `.env.example`, then set:
 
@@ -24,7 +37,7 @@ DATABASE_URL=./data/trakt-sync.db
 LOG_LEVEL=info
 ```
 
-Generate a strong encryption key with `openssl rand -hex 32`. This creates 32 random bytes encoded as 64 hexadecimal characters. If OpenSSL is unavailable, use `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Keep the key stable: changing it makes existing encrypted tokens unreadable.
+`openssl rand -hex 32` creates 32 random bytes encoded as 64 hexadecimal characters. If OpenSSL is unavailable, use `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Keep the key stable: changing it makes existing encrypted tokens unreadable.
 
 ## Run locally
 
@@ -39,7 +52,7 @@ The development script reads `.env`. Open `http://<tracker-host>:3000/auth/login
 
 ## Docker Compose
 
-The Compose file pulls the production image from `ghcr.io/fiav1/aiostreams-trakt-tracker:latest`. The GitHub Actions pipeline publishes it after CI succeeds on pushes to `main` and `v*` version tags. To pin a release, set `TRACKER_IMAGE` in `.env`, for example `ghcr.io/fiav1/aiostreams-trakt-tracker:1.2.3`.
+The Compose file pulls the production image from `ghcr.io/fiav1/aiostreams-trakt-tracker:latest`. After Conventional Commits land on `main`, Release Please opens or updates a version and changelog pull request. Merging that PR creates a SemVer tag and GitHub Release; the pipeline publishes the matching image after CI succeeds. To pin a release, set `TRACKER_IMAGE` in `.env`, for example `ghcr.io/fiav1/aiostreams-trakt-tracker:1.2.3`.
 
 After the first successful publish, check the package's settings on GitHub. If it is private, change its visibility to **Public** so Docker hosts can pull it anonymously. Public GHCR images can be pulled without authentication. See [package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) and [Container Registry access](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
@@ -56,7 +69,7 @@ SQLite data is stored in the mounted `./data` directory. Back up that directory 
 
 For hands-on end-to-end checks, the repository includes [docker-compose.test.yml](docker-compose.test.yml). It starts an isolated tracker and the official AIOStreams image on a private Compose network, stores their data under `.test-data/`, and binds browser-facing ports to `127.0.0.1` only. It does not change the normal `docker-compose.yml` stack.
 
-Copy `docker-compose.test.env.example` to `.env.test`, then set your Trakt app credentials and generate two different 64-character keys with `openssl rand -hex 32` (one for the tracker, one for AIOStreams). Start the stack:
+Copy `.env.test.example` to `.env.test`, then set your Trakt app credentials and generate two different 64-character keys with `openssl rand -hex 32` (one for the tracker, one for AIOStreams). Start the stack:
 
 ```sh
 docker compose --env-file .env.test -f docker-compose.test.yml up -d --build
@@ -87,5 +100,15 @@ npm test
 ```
 
 The Vitest suite includes unit tests and a service-level integration test that exercises simulated Trakt Device Code login and viewer linking, manifest delivery, push processing through the durable queue, SQLite persistence, duplicate-event idempotency, and pull output without contacting Trakt.
+
+## Contributing and releases
+
+Contributions are welcome through pull requests. See [contributing and release guidelines](docs/CONTRIBUTING.md) for Conventional Commit titles and the automated release process. The repository includes an importable [main protection ruleset](.github/rulesets/main-protection.json); import it from **Settings → Rules → Rulesets** to block direct pushes to `main` and require the `verify` check. GitHub rulesets are repository settings and do not become active just by committing the JSON file. GitHub documents [importing repository rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository).
+
+Before the first main-branch update after enabling the release workflow, add the `RELEASE_PLEASE_TOKEN` Actions secret described in the contributing guide. Also check the GHCR package visibility if you want anonymous pulls.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
 
 See [the implementation plan](docs/IMPLEMENTATION_PLAN.md), [API mapping](docs/API_MAPPING.md), and [architecture](docs/ARCHITECTURE.md) for current scope and known gaps.
