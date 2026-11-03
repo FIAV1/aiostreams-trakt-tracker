@@ -105,7 +105,7 @@ The Vitest suite includes unit tests and a service-level integration test that e
 
 Contributions are welcome through pull requests. See [contributing and release guidelines](docs/CONTRIBUTING.md) for Conventional Commit titles and the automated release process. The repository includes an importable [main protection ruleset](.github/rulesets/main-protection.json); import it from **Settings → Rules → Rulesets** to block direct pushes to `main` and require the `verify` check. GitHub rulesets are repository settings and do not become active just by committing the JSON file. GitHub documents [importing repository rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository).
 
-Before the first main-branch update after enabling the release workflow, add the `RELEASE_PLEASE_TOKEN` Actions secret described in the contributing guide. Also check the GHCR package visibility if you want anonymous pulls.
+The release workflow works with GitHub Actions' built-in token. You can optionally add the `RELEASE_PLEASE_TOKEN` secret to have release PR checks start without manual workflow approval; see the [token setup steps](docs/CONTRIBUTING.md#optional-create-a-token-to-avoid-approving-release-pr-workflows). Also check the GHCR package visibility if you want anonymous pulls.
 
 ## License
 

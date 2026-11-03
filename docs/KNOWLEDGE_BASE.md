@@ -36,7 +36,7 @@ This is the durable record of project decisions and operational facts that are e
 - PR titles follow Conventional Commits because squash merge uses the title as the commit subject. `feat` maps to a minor bump, `fix` to patch, and `!`/`BREAKING CHANGE` to major. Release Please generates the changelog, version PR, tag, and GitHub Release.
 - Dependabot checks npm and GitHub Actions weekly; npm patch/minor updates are grouped, major updates stay separate, and PR title prefixes remain compatible with semantic validation.
 - The initial published version baseline is `1.0.0`, matching `package.json`. `.release-please-manifest.json` records this baseline and `.release-please-config.json` limits changelog history to commits after the bootstrap SHA.
-- Release Please needs a repository secret named `RELEASE_PLEASE_TOKEN` so generated release PRs trigger validation workflows. Prefer a narrowly scoped fine-grained token (Contents read/write, Pull requests read/write, Issues write) or a GitHub App token; see `docs/CONTRIBUTING.md`.
+- Release Please can use the automatically provided `GITHUB_TOKEN`; a `RELEASE_PLEASE_TOKEN` fine-grained PAT or GitHub App token is optional. A dedicated token avoids GitHub's approval hold for workflows triggered by bot-created PRs, keeping required release PR checks automatic. Setup details and tradeoffs are in `docs/CONTRIBUTING.md`.
 - GitHub Packages creates package visibility/access settings outside the repository workflow. Confirm the GHCR package is public if anonymous homelab pulls are desired.
 
 ## Current known limitation
