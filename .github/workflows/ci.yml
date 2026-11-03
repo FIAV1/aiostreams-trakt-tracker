@@ -3,6 +3,12 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing Release Please tag to republish (for example aiostreams-trakt-tracker-v1.1.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -86,7 +92,11 @@ jobs:
   publish-image:
     name: Publish production image to GHCR
     needs: [verify, release_please]
-    if: needs.release_please.outputs.release_created == 'true'
+    if: |
+      always() &&
+      needs.verify.result == 'success' &&
+      ((github.event_name == 'push' && needs.release_please.outputs.release_created == 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.release_tag != ''))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -95,7 +105,7 @@ jobs:
       - name: Check out released source
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release_please.outputs.tag_name }}
+          ref: ${{ needs.release_please.outputs.tag_name || inputs.release_tag }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -107,6 +117,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract image version from release tag
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.release_please.outputs.tag_name || inputs.release_tag }}
+        run: |
+          version="${RELEASE_TAG##*-v}"
+          if [[ "$version" == "$RELEASE_TAG" ]]; then
+            version="${RELEASE_TAG#v}"
+          fi
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release tag '$RELEASE_TAG' does not end in a stable semantic version." >&2
+            exit 1
+          fi
+          IFS='.' read -r major minor patch <<< "$version"
+          {
+            echo "version=$version"
+            echo "major_minor=$major.$minor"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Generate release image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -114,8 +144,8 @@ jobs:
           images: ghcr.io/fiav1/aiostreams-trakt-tracker
           tags: |
             type=raw,value=latest
-            type=semver,pattern={{version}},value=${{ needs.release_please.outputs.tag_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release_please.outputs.tag_name }}
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.major_minor }}
 
       - name: Build and push production image
         uses: docker/build-push-action@v7
