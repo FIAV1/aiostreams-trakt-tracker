@@ -1,5 +1,16 @@
 # API Mapping
 
+## Trakt account authorization
+
+| Tracker operation | Trakt request | Notes |
+| --- | --- | --- |
+| Start login | `POST /oauth/device/code` | The tracker stores the private `device_code` server-side and shows the user code at `/auth/login?viewer=<viewer-id>`. |
+| Poll login | `POST /oauth/device/token` | Poll at Trakt's returned interval until approval, denial, or expiration. The app client secret remains server-side. |
+| Refresh credentials | `POST /oauth/token` | Rotates the stored refresh token; both new tokens are encrypted before persistence. |
+| Disconnect | `POST /oauth/revoke` | Revokes the access token, then removes the local Trakt connection. |
+
+This device-code flow is intended for media-center integrations and does not require a redirect URI or a callback into this tracker.
+
 ## AIOStreams Push → Trakt
 
 Trakt write calls use the documented JSON sync/scrobble payloads. Media identifiers are forwarded from the AIOStreams event (`ids.trakt`, `ids.imdb`, `ids.tmdb`, `ids.tvdb`); Trakt resolves those identifiers when matching media.
@@ -25,8 +36,8 @@ Bulk watched/unwatched events are filtered per episode by timestamp, then eligib
 | --- | --- | --- |
 | `GET /sync/playback` | `items` | Progress and paused timestamp; runtime is converted from minutes to milliseconds |
 | `GET /sync/history` | `watched.movies`, `watched.episodes` | Movie IDs and episode IDs |
-| `GET /sync/watchlist` | `watchlist` | `type`, `kind`, `metaId`, and listing timestamp |
-| `GET /sync/ratings` | `ratings` | `type`, `metaId`, `rating`, and rating timestamp |
+| `GET /sync/watchlist` | `watchlist` | Movie and show entries map to `type`, `kind`, `metaId`, and listing timestamp; Trakt-only season/episode watchlist entries are ignored because Watch State models movie/show favorites only |
+| `GET /sync/ratings` | `ratings` | Movie/show ratings map to `type` and `metaId`; season ratings preserve `season`, and episode ratings preserve the canonical `metaId:season:episode` `videoId` |
 | Local `dropped_state` | `watched.dropped` | Locally stored dropped IDs |
 | `GET /sync/last_activities` | `version` | Latest Trakt activity contributes to the incremental version |
 

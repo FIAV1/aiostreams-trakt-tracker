@@ -7,10 +7,8 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - DATABASE_URL=/data/trakt-sync.db
-      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
       - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}
       - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET}
-      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI}
       - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
     volumes:
       - ./data:/data

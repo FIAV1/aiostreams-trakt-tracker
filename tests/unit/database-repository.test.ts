@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import BetterSqlite3 from 'better-sqlite3';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DatabaseRepository } from '../../src/database/repository.js';
 
 describe('DatabaseRepository', () => {
@@ -32,6 +36,36 @@ describe('DatabaseRepository', () => {
 
     expect(await db.getSyncEvent('viewer-a', 'same-event')).toMatchObject({ user_id: 'viewer-a', event_id: 'same-event' });
     expect(await db.getSyncEvent('viewer-b', 'same-event')).toMatchObject({ user_id: 'viewer-b', event_id: 'same-event' });
+  });
+
+  it('upgrades version 2 databases and recovers legacy scoped ratings', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'trakt-tracker-migration-'));
+    const filename = join(directory, 'tracker.db');
+    const legacy = new BetterSqlite3(filename);
+    legacy.exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);
+      INSERT INTO schema_migrations VALUES (1, 'initial-schema', 1), (2, 'viewer-scoped-event-ids', 2);
+      CREATE TABLE media_items (id TEXT PRIMARY KEY, media_type TEXT NOT NULL, canonical_meta_id TEXT NOT NULL);
+      CREATE TABLE ratings_state (user_id TEXT NOT NULL, media_item_id TEXT NOT NULL, rating REAL NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, media_item_id));
+      INSERT INTO media_items VALUES ('show:season:3', 'series', 'imdb:ttshow'),
+        ('show:episode:3:7', 'series', 'imdb:ttshow'), ('imdb:ttmovie', 'movie', 'imdb:ttmovie');
+      INSERT INTO ratings_state VALUES ('viewer-a', 'show:season:3', 7, 1000),
+        ('viewer-a', 'show:episode:3:7', 8, 2000), ('viewer-a', 'imdb:ttmovie', 9, 3000);`);
+    legacy.close();
+
+    const upgraded = new DatabaseRepository(filename);
+    try {
+      await upgraded.initialize();
+      const ratings = await upgraded.listRatingState('viewer-a');
+      expect(ratings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'season', season: 3, episode: null, rating: 7 }),
+        expect.objectContaining({ scope: 'episode', season: 3, episode: 7, rating: 8 }),
+        expect.objectContaining({ scope: 'movie', season: null, episode: null, rating: 9 }),
+      ]));
+    } finally {
+      await upgraded.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('deduplicates durable jobs per viewer and allows the same event for another viewer', async () => {

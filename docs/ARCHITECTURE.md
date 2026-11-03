@@ -4,15 +4,15 @@
 
 - `src/server.ts` loads required configuration, opens SQLite, registers routes, creates a durable sync worker, and handles shutdown.
 - `src/index.ts` defines and validates the AIOStreams addon manifest.
-- `src/api/auth.ts` implements viewer-scoped OAuth login/callback and account disconnection.
+- `src/api/auth.ts` implements viewer-scoped Trakt Device Code login/status polling and account disconnection.
 - `src/api/watch-state.ts` validates Watch State v2 push events and builds pull responses from Trakt plus local state.
 - `src/api/health.ts` exposes health/status and `/manifest.json`.
-- `src/trakt/auth.ts` handles PKCE token exchange, refresh, and revocation.
+- `src/trakt/auth.ts` handles device-code authorization, token refresh, and revocation.
 - `src/trakt/token-crypto.ts` encrypts/decrypts tokens with AES-256-GCM.
 - `src/trakt/client.ts` owns Trakt HTTP calls, headers, pagination, rate-limit retries, and payload construction.
 - `src/sync/queue.ts` persists accepted push events and retries them with exponential backoff.
 - `src/sync/engine.ts` applies pushed events, merges Trakt snapshots, and performs per-item timestamp conflict checks.
-- `src/database/repository.ts` creates and migrates SQLite tables transactionally, then implements persistence with parameterized SQL. `src/database/schema.ts` is a reference schema declaration and is not used at runtime.
+- `src/database/repository.ts` creates and migrates SQLite tables transactionally, then implements persistence with parameterized SQL through `better-sqlite3`.
 
 ## Push flow
 
@@ -33,4 +33,4 @@
 
 SQLite stores viewer credentials, media identifiers, playback state, event audit records, sync checkpoints, watchlist/ratings/dropped state, and durable queue jobs. OAuth tokens are encrypted at rest.
 
-Conflict reconciliation uses timestamped local events and Trakt snapshots, with Jellyfin winning equal timestamps. Supported external IDs are sent directly to Trakt, which resolves them; no separate identifier cache is maintained. `dropped` is retained locally and returned through Watch State pull. Queue counts, including dead jobs, are available through `/api/status`. A live end-to-end check still requires an HTTPS Trakt callback and connected AIOStreams deployment.
+Conflict reconciliation uses timestamped local events and Trakt snapshots, with Jellyfin winning equal timestamps. Supported external IDs are sent directly to Trakt, which resolves them; no separate identifier cache is maintained. `dropped` is retained locally and returned through Watch State pull. Queue counts, including dead jobs, are available through `/api/status`. Device Code login avoids a callback; live end-to-end validation requires a registered Trakt app and connected AIOStreams deployment.

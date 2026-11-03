@@ -1,5 +1,4 @@
 import { TraktConfig, TraktApiConfig } from './config.js';
-import { generateCodeVerifier, generateCodeChallenge } from './auth-utils.js';
 
 export interface TraktTokens {
   accessToken: string;
@@ -7,43 +6,86 @@ export interface TraktTokens {
   expiresAt: number;
 }
 
+export interface TraktDeviceCode {
+  deviceCode: string;
+  userCode: string;
+  verificationUrl: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export type TraktDevicePollResult =
+  | { status: 'pending' | 'slow_down' }
+  | { status: 'authorized'; tokens: TraktTokens }
+  | { status: 'invalid' | 'already_used' | 'expired' | 'denied' };
+
+export class TraktOAuthError extends Error {
+  constructor(message: string, readonly statusCode: number) {
+    super(message);
+    this.name = 'TraktOAuthError';
+  }
+}
+
 export class TraktAuth {
   constructor(private config: TraktConfig) {}
 
-  async getAuthorizationUrl(state: string, codeVerifier: string) {
-    const challenge = generateCodeChallenge(codeVerifier);
-    const url = new URL(TraktApiConfig.authUrl);
-    url.searchParams.set('response_type', 'code');
-    url.searchParams.set('client_id', this.config.clientId);
-    url.searchParams.set('redirect_uri', this.config.redirectUri);
-    url.searchParams.set('state', state);
-    url.searchParams.set('code_challenge', challenge);
-    url.searchParams.set('code_challenge_method', 'S256');
-    return url.toString();
+  async requestDeviceCode(): Promise<TraktDeviceCode> {
+    const response = await fetch(`${TraktApiConfig.baseUrl}/oauth/device/code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: this.config.clientId }),
+    });
+    if (!response.ok) throw new TraktOAuthError(`Trakt device code request failed (${response.status})`, response.status);
+    const data = await response.json();
+    const verificationUrl = new URL(data.verification_url);
+    if (verificationUrl.protocol !== 'https:' || !(verificationUrl.hostname === 'trakt.tv' || verificationUrl.hostname.endsWith('.trakt.tv'))) {
+      throw new Error('Trakt returned an invalid device verification URL');
+    }
+    if (typeof data.device_code !== 'string' || !data.device_code
+      || typeof data.user_code !== 'string' || !data.user_code
+      || !Number.isFinite(data.expires_in) || data.expires_in <= 0
+      || !Number.isFinite(data.interval) || data.interval <= 0) {
+      throw new Error('Trakt returned an invalid device code response');
+    }
+    return {
+      deviceCode: data.device_code,
+      userCode: data.user_code,
+      verificationUrl: verificationUrl.toString(),
+      expiresIn: data.expires_in,
+      interval: data.interval,
+    };
   }
 
-  async exchangeCodeForTokens(code: string, codeVerifier: string): Promise<TraktTokens> {
-    const response = await fetch(TraktApiConfig.tokenUrl, {
+  async pollDeviceToken(deviceCode: string): Promise<TraktDevicePollResult> {
+    const response = await fetch(`${TraktApiConfig.baseUrl}/oauth/device/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        grant_type: 'authorization_code',
-        code,
+        code: deviceCode,
         client_id: this.config.clientId,
-        redirect_uri: this.config.redirectUri,
-        code_verifier: codeVerifier,
+        client_secret: this.config.clientSecret,
       }),
     });
+    if (response.status === 400) return { status: 'pending' };
+    if (response.status === 429) return { status: 'slow_down' };
+    if (response.status === 404) return { status: 'invalid' };
+    if (response.status === 409) return { status: 'already_used' };
+    if (response.status === 410) return { status: 'expired' };
+    if (response.status === 418) return { status: 'denied' };
+    if (!response.ok) throw new TraktOAuthError(`Trakt device authorization failed (${response.status})`, response.status);
+    return { status: 'authorized', tokens: this.readTokens(await response.json()) };
+  }
 
-    if (!response.ok) {
-      throw new Error(`Trakt token exchange failed: ${await response.text()}`);
+  private readTokens(data: any): TraktTokens {
+    if (typeof data.access_token !== 'string' || typeof data.refresh_token !== 'string'
+      || typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
+      throw new Error('Trakt returned an invalid token response');
     }
-
-    const data = await response.json();
+    const createdAt = typeof data.created_at === 'number' ? data.created_at * 1000 : Date.now();
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
-      expiresAt: Date.now() + data.expires_in * 1000,
+      expiresAt: createdAt + data.expires_in * 1000,
     };
   }
 
@@ -55,6 +97,7 @@ export class TraktAuth {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
       }),
     });
 
@@ -62,19 +105,14 @@ export class TraktAuth {
       throw new Error(`Trakt token refresh failed: ${await response.text()}`);
     }
 
-    const data = await response.json();
-    return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: Date.now() + data.expires_in * 1000,
-    };
+    return this.readTokens(await response.json());
   }
 
   async revokeToken(accessToken: string): Promise<void> {
     const response = await fetch(`${TraktApiConfig.baseUrl}/oauth/revoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: accessToken, client_id: this.config.clientId, ...(this.config.clientSecret ? { client_secret: this.config.clientSecret } : {}) }),
+      body: JSON.stringify({ token: accessToken, client_id: this.config.clientId, client_secret: this.config.clientSecret }),
     });
     if (!response.ok && response.status !== 404) {
       throw new Error(`Trakt token revocation failed (${response.status}): ${await response.text()}`);

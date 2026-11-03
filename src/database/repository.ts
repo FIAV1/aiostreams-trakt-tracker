@@ -1,9 +1,16 @@
-import sqlite3 from 'sqlite3';
-import { open, type Database } from 'sqlite';
+import BetterSqlite3 from 'better-sqlite3';
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 type DateLike = Date | number | string | null | undefined;
+interface SqlDatabase {
+  exec(sql: string): Promise<void>;
+  run(sql: string, ...params: any[]): Promise<{ changes: number; lastID: number }>;
+  get<T = any>(sql: string, ...params: any[]): Promise<T | undefined>;
+  all<T = any>(sql: string, ...params: any[]): Promise<T[]>;
+  close(): Promise<void>;
+}
+
 const timestamp = (value: DateLike): number | null => {
   if (value == null) return null;
   if (value instanceof Date) return value.getTime();
@@ -15,13 +22,23 @@ const timestamp = (value: DateLike): number | null => {
 
 /** SQLite persistence. All public methods wait for schema initialization. */
 export class DatabaseRepository {
-  private readonly ready: Promise<Database>;
+  private readonly ready: Promise<SqlDatabase>;
 
   constructor(databasePath: string) {
     const filename = databasePath === ':memory:' ? databasePath : resolve(databasePath);
     this.ready = (async () => {
       if (filename !== ':memory:') await mkdir(dirname(filename), { recursive: true });
-      const db = await open({ filename, driver: sqlite3.Database });
+      const native = new BetterSqlite3(filename);
+      const db: SqlDatabase = {
+        exec: async sql => { native.exec(sql); },
+        run: async (sql, ...params) => {
+          const result = native.prepare(sql).run(...params);
+          return { changes: result.changes, lastID: Number(result.lastInsertRowid) };
+        },
+        get: async <T = any>(sql: string, ...params: any[]) => native.prepare(sql).get(...params) as T | undefined,
+        all: async <T = any>(sql: string, ...params: any[]) => native.prepare(sql).all(...params) as T[],
+        close: async () => { native.close(); },
+      };
       await db.exec('PRAGMA foreign_keys = ON;');
       const schemaSql = `
         CREATE TABLE IF NOT EXISTS users (
@@ -66,6 +83,7 @@ export class DatabaseRepository {
         );
         CREATE TABLE IF NOT EXISTS ratings_state (
           user_id TEXT NOT NULL, media_item_id TEXT NOT NULL, rating REAL NOT NULL, at INTEGER NOT NULL,
+          scope TEXT NOT NULL DEFAULT 'series', season INTEGER, episode INTEGER,
           PRIMARY KEY(user_id, media_item_id), FOREIGN KEY(user_id) REFERENCES users(id),
           FOREIGN KEY(media_item_id) REFERENCES media_items(id)
         );
@@ -120,6 +138,35 @@ export class DatabaseRepository {
             CREATE INDEX sync_events_pending ON sync_events(status, created_at);`);
           await db.run('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)', 2, 'viewer-scoped-event-ids', Date.now());
           await db.exec('PRAGMA user_version = 2');
+          await db.exec('COMMIT');
+        } catch (error) {
+          await db.exec('ROLLBACK');
+          throw error;
+        }
+      }
+      const latestMigration = await db.get('SELECT MAX(version) AS version FROM schema_migrations');
+      if ((latestMigration?.version ?? 0) < 3) {
+        await db.exec('BEGIN IMMEDIATE');
+        try {
+          const columns = await db.all<{ name: string }>('PRAGMA table_info(ratings_state)');
+          const columnNames = new Set(columns.map(column => column.name));
+          if (!columnNames.has('scope')) await db.exec("ALTER TABLE ratings_state ADD COLUMN scope TEXT NOT NULL DEFAULT 'series'");
+          if (!columnNames.has('season')) await db.exec('ALTER TABLE ratings_state ADD COLUMN season INTEGER');
+          if (!columnNames.has('episode')) await db.exec('ALTER TABLE ratings_state ADD COLUMN episode INTEGER');
+          // Recover legacy season rows where their synthetic ID retained the scope.
+          await db.exec(`UPDATE ratings_state SET scope='movie' WHERE media_item_id IN (SELECT id FROM media_items WHERE media_type='movie');
+            UPDATE ratings_state SET scope='season', season=CAST(substr(media_item_id, instr(media_item_id, ':season:') + 8) AS INTEGER)
+              WHERE media_item_id LIKE '%:season:%';`);
+          const legacyEpisodes = await db.all<{ user_id: string; media_item_id: string }>(
+            "SELECT user_id, media_item_id FROM ratings_state WHERE media_item_id LIKE '%:episode:%'",
+          );
+          for (const row of legacyEpisodes) {
+            const match = row.media_item_id.match(/:episode:(\d+):(\d+)$/);
+            if (match) await db.run("UPDATE ratings_state SET scope='episode', season=?, episode=? WHERE user_id=? AND media_item_id=?",
+              Number(match[1]), Number(match[2]), row.user_id, row.media_item_id);
+          }
+          await db.run('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)', 3, 'scoped-ratings', Date.now());
+          await db.exec('PRAGMA user_version = 3');
           await db.exec('COMMIT');
         } catch (error) {
           await db.exec('ROLLBACK');
@@ -314,15 +361,17 @@ export class DatabaseRepository {
       FROM watchlist_state w JOIN media_items m ON m.id=w.media_item_id WHERE w.user_id=?`, userId);
   }
 
-  async setRatingState(userId: string, mediaItemId: string, rating: number | null, at: DateLike) {
+  async setRatingState(userId: string, mediaItemId: string, rating: number | null, at: DateLike, scope: 'movie' | 'series' | 'season' | 'episode' = 'series', season?: number, episode?: number) {
     const db = await this.db();
     if (rating == null) await db.run('DELETE FROM ratings_state WHERE user_id=? AND media_item_id=?', userId, mediaItemId);
-    else await db.run(`INSERT INTO ratings_state(user_id, media_item_id, rating, at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(user_id, media_item_id) DO UPDATE SET rating=excluded.rating, at=excluded.at`, userId, mediaItemId, rating, timestamp(at));
+    else await db.run(`INSERT INTO ratings_state(user_id, media_item_id, rating, at, scope, season, episode) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, media_item_id) DO UPDATE SET rating=excluded.rating, at=excluded.at,
+      scope=excluded.scope, season=excluded.season, episode=excluded.episode`, userId, mediaItemId, rating, timestamp(at), scope, season ?? null, episode ?? null);
   }
   async listRatingState(userId: string) {
     return (await this.db()).all(`SELECT m.media_type AS type, m.canonical_meta_id AS metaId,
-      r.media_item_id AS mediaItemId, r.rating, r.at FROM ratings_state r JOIN media_items m ON m.id=r.media_item_id WHERE r.user_id=?`, userId);
+      r.media_item_id AS mediaItemId, r.rating, r.at, r.scope, r.season, r.episode
+      FROM ratings_state r JOIN media_items m ON m.id=r.media_item_id WHERE r.user_id=?`, userId);
   }
 
   async setDroppedState(userId: string, mediaItemId: string, at: DateLike, present: boolean) {

@@ -16,9 +16,9 @@ The AIOStreams Trakt Tracker is a self-hosted integration service that synchroni
 ### Tech Stack
 - **Runtime**: Node.js (ESM)
 - **Framework**: Fastify
-- **Database**: SQLite (via `sqlite` and `sqlite3`)
+- **Database**: SQLite (via `better-sqlite3` with parameterized SQL)
 - **Protocol**: AIOStreams Watch State v2
-- **External API**: Trakt REST API (OAuth 2.0 PKCE)
+- **External API**: Trakt REST API (OAuth 2.0 Device Code Flow)
 
 ### Key Components
 - `TraktClient`: Handles all communication with the Trakt API, including pagination and rate limiting.
@@ -29,13 +29,13 @@ The AIOStreams Trakt Tracker is a self-hosted integration service that synchroni
 ## Development Guide
 
 ### Local Development
-1. Install dependencies: `npm install`
+1. Install locked dependencies: `npm ci`
 2. Set up environment variables using `.env.example`.
 3. Run in development mode: `npm run dev`
 4. Run typecheck: `npm run typecheck`
 
 ### Testing
-- Unit tests are located in `tests/unit/`.
+- Unit tests are located in `tests/unit/`; service integration tests are in `tests/integration/`.
 - Run tests using: `npx vitest run`
 
 ### Adding New Features
@@ -47,7 +47,7 @@ The AIOStreams Trakt Tracker is a self-hosted integration service that synchroni
 ## Maintenance and Troubleshooting
 
 ### Common Issues
-- **Native Dependencies**: `sqlite3` requires build tools. Use the provided Docker configuration for consistent builds.
+- **Native Dependencies**: `better-sqlite3` uses a platform-specific native binding. Use the provided Docker configuration for consistent builds.
 - **OAuth Tokens**: Ensure `TOKEN_ENCRYPTION_KEY` is consistent across restarts to avoid token decryption failures.
 - **Sync Loops**: Check `src/sync/engine.ts` for echo protection logic if loops are detected.
 

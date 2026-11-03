@@ -1,6 +1,6 @@
 # Database Schema
 
-The database is implemented with SQLite through the `sqlite` and `sqlite3` packages and parameterized SQL in `DatabaseRepository`. `src/database/schema.ts` is a reference declaration only.
+The database is implemented with SQLite through `better-sqlite3` and parameterized SQL in `DatabaseRepository`. Table creation and versioned migrations are defined in the repository initializer.
 
 ## Tables
 
@@ -78,6 +78,11 @@ Synchronization checkpoints.
 - `media_item_id`: UUID (FK -> media_items.id)
 - `rating`: Float
 - `at`: Integer (Timestamp)
+- `scope`: Enum (`movie`, `series`, `season`, `episode`)
+- `season`: Integer (Nullable; set for season and episode ratings)
+- `episode`: Integer (Nullable; set for episode ratings)
+
+Migration 3 adds rating scope columns and recovers scope from legacy movie, season, and episode rows where possible. Watch State pull returns episode ratings by canonical `metaId:season:episode` video ID and season ratings with their season number.
 
 ### `dropped_state`
 - `user_id`: Viewer ID (FK -> users.id)

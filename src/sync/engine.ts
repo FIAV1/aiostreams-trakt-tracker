@@ -3,6 +3,30 @@ import { DatabaseRepository } from '../database/repository.js';
 import { TraktClient, type TraktMediaRef } from '../trakt/client.js';
 
 interface EventItem { videoId: string; kind: TraktMediaRef['kind']; season?: number; episode?: number; }
+type RatingScope = 'movie' | 'series' | 'season' | 'episode';
+
+function episodeVideoId(metaId: string, episode: any): string | undefined {
+  const season = Number(episode?.season);
+  const number = Number(episode?.number);
+  if (!Number.isInteger(season) || season < 0 || !Number.isInteger(number) || number < 1) return undefined;
+  return `${metaId}:${season}:${number}`;
+}
+
+function traktRatingScope(entry: any): RatingScope {
+  if (entry?.movie || entry?.type === 'movie') return 'movie';
+  if (entry?.episode || entry?.type === 'episode') return 'episode';
+  if (entry?.season || entry?.type === 'season') return 'season';
+  return 'series';
+}
+
+function ratingIdentity(metaId: string, scope: RatingScope, season?: number, episode?: number): string {
+  return `${metaId}|${scope}|${season ?? ''}|${episode ?? ''}`;
+}
+
+function watchlistMedia(entry: any): any | undefined {
+  if (entry?.season || entry?.episode || entry?.type === 'season' || entry?.type === 'episode') return undefined;
+  return entry?.movie || entry?.show;
+}
 
 function preferredId(media: any): string | undefined {
   const ids = media?.ids || {};
@@ -214,7 +238,9 @@ export class SyncEngine {
       return;
     }
     if (event.event === 'rated' || event.event === 'unrated') {
-      await this.db.setRatingState(userId, mediaItemId, event.event === 'rated' ? (event as RatingEvent).rating ?? null : null, at);
+      const rating = event as RatingEvent;
+      await this.db.setRatingState(userId, mediaItemId, event.event === 'rated' ? rating.rating ?? null : null, at,
+        rating.scope as RatingScope, rating.season ?? undefined, rating.episode ?? undefined);
       return;
     }
     if (event.event === 'dropped' || event.event === 'undropped') {
@@ -275,7 +301,7 @@ export class SyncEngine {
       const isMovie = entry.type === 'movie' || Boolean(movie);
       const media = isMovie ? movie : show;
       const metaId = preferredId(media);
-      const videoId = isMovie ? metaId : preferredId(episode) || (metaId && episode ? `${metaId}:s${episode.season}e${episode.number}` : undefined);
+      const videoId = isMovie ? metaId : metaId && episode ? episodeVideoId(metaId, episode) : undefined;
       const at = this.remoteTimestamp(entry.paused_at);
       if (!metaId || !videoId || !at) continue;
       const progress = Number(entry.progress ?? 0);
@@ -284,7 +310,7 @@ export class SyncEngine {
         videoId, metaId, mediaType: isMovie ? 'movie' : 'series', season: episode?.season, episode: episode?.number,
         positionMs: runtime > 0 ? runtime * 60_000 * progress / 100 : 0,
         durationMs: runtime > 0 ? runtime * 60_000 : 0, progressPercent: progress, watched: false, at,
-        ids: episode?.ids || media?.ids, includeCanonical: isMovie || !episode,
+        ids: media?.ids, includeCanonical: isMovie || !episode,
       }, 'trakt_playback');
     }
 
@@ -295,15 +321,15 @@ export class SyncEngine {
       const isMovie = Boolean(movie);
       const media = isMovie ? movie : show;
       const metaId = preferredId(media);
-      const videoId = isMovie ? metaId : preferredId(episode) || (metaId && episode ? `${metaId}:s${episode.season}e${episode.number}` : undefined);
+      const videoId = isMovie ? metaId : metaId && episode ? episodeVideoId(metaId, episode) : undefined;
       const at = this.remoteTimestamp(entry.watched_at);
       if (!metaId || !videoId || !at) continue;
       remoteWatched.add(videoId);
-      for (const key of identityKeys(isMovie ? movie : episode)) remoteWatched.add(key);
+      for (const key of identityKeys(isMovie ? movie : show)) remoteWatched.add(key);
       await this.mergeRemoteItem(userId, {
         videoId, metaId, mediaType: isMovie ? 'movie' : 'series', season: episode?.season, episode: episode?.number,
         positionMs: 0, durationMs: 0, progressPercent: 0, watched: true, at,
-        ids: episode?.ids || media?.ids, includeCanonical: isMovie || !episode,
+        ids: media?.ids, includeCanonical: isMovie || !episode,
       }, 'trakt_watched');
     }
 
@@ -328,7 +354,9 @@ export class SyncEngine {
     }
 
     for (const entry of watchlist) {
-      const object = entry.movie || entry.show || entry.season || entry.episode;
+      // Watch State's watchlist has movie/series entries only; do not relabel Trakt seasons as shows.
+      const object = watchlistMedia(entry);
+      if (!object) continue;
       const metaId = preferredId(object);
       const at = this.remoteTimestamp(entry.listed_at);
       if (!metaId || !at) continue;
@@ -341,7 +369,7 @@ export class SyncEngine {
       await this.recordRemoteEvent(userId, media.id, `trakt:watchlist:${videoId}:${at.getTime()}`, 'trakt_watchlisted', at);
     }
 
-    const remoteWatchlist = new Set(watchlist.flatMap(entry => identityKeys(entry.movie || entry.show || entry.season || entry.episode)));
+    const remoteWatchlist = new Set(watchlist.flatMap(entry => identityKeys(watchlistMedia(entry))));
     for (const local of await this.db.listWatchlistState(userId)) {
       if (remoteWatchlist.has(local.metaId)) continue;
       const activityAt = this.latestActivityDate(activity, local.type === 'movie'
@@ -359,21 +387,34 @@ export class SyncEngine {
       const metaId = preferredId(entry.show || object);
       const at = this.remoteTimestamp(entry.rated_at);
       if (!metaId || !at || typeof entry.rating !== 'number') continue;
-      const scopedId = entry.season?.number != null
-        ? `${metaId}:season:${entry.season.number}`
-        : entry.episode?.ids ? preferredId(entry.episode) : metaId;
+      const scope = traktRatingScope(entry);
+      const season = entry.season?.number ?? entry.episode?.season;
+      const episodeNumber = entry.episode?.number;
+      const scopedId = scope === 'episode' && entry.episode ? episodeVideoId(metaId, entry.episode)
+        : scope === 'season' ? `${metaId}:season:${season}` : metaId;
       if (!scopedId) continue;
-      const mediaType = entry.type === 'movie' || entry.movie ? 'movie' : 'series';
-      const media = await this.ensureMediaItem(userId, scopedId, metaId, mediaType, object?.ids, !entry.episode);
+      const mediaType = scope === 'movie' ? 'movie' : 'series';
+      // Scoped ratings must not reuse the series row merely because Trakt identifiers match.
+      const media = await this.ensureMediaItem(userId, scopedId, metaId, mediaType,
+        scope === 'movie' || scope === 'series' ? (entry.show || entry.movie || object)?.ids : {},
+        scope === 'movie' || scope === 'series');
       const latest = await this.db.getLatestMediaEvent(userId, media.id);
       if (latest && (at.getTime() < latest.event_timestamp || (at.getTime() === latest.event_timestamp && latest.source === 'jellyfin'))) continue;
-      await this.db.setRatingState(userId, media.id, entry.rating, at);
+      await this.db.setRatingState(userId, media.id, entry.rating, at, scope, season, episodeNumber);
       await this.recordRemoteEvent(userId, media.id, `trakt:rating:${scopedId}:${at.getTime()}`, 'trakt_rated', at);
     }
 
-    const remoteRatings = new Set(ratings.flatMap(entry => identityKeys(entry.show || entry.movie || entry.season || entry.episode)));
+    const remoteRatings = new Set(ratings.flatMap(entry => {
+      const object = entry.movie || entry.show || entry.season || entry.episode;
+      const metaId = preferredId(entry.show || object);
+      if (!metaId) return [];
+      const scope = traktRatingScope(entry);
+      const season = entry.season?.number ?? entry.episode?.season;
+      const episode = entry.episode?.number;
+      return [ratingIdentity(metaId, scope, season, episode)];
+    }));
     for (const local of await this.db.listRatingState(userId)) {
-      if (remoteRatings.has(local.metaId)) continue;
+      if (remoteRatings.has(ratingIdentity(local.metaId, local.scope || (local.type === 'movie' ? 'movie' : 'series'), local.season, local.episode))) continue;
       const activityAt = this.latestActivityDate(activity, local.type === 'movie'
         ? [['ratings', 'movies'], ['movies', 'rated_at']]
         : [['ratings', 'shows'], ['shows', 'rated_at'], ['ratings', 'seasons'], ['ratings', 'episodes']]);

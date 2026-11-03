@@ -118,7 +118,11 @@ export function watchStatePull(fastify: FastifyInstance, db: DatabaseRepository,
           metaId: row.metaId, at: toEpoch(row.at),
         })) }),
         ...(since === version ? {} : { ratings: localRatings.map((row: any) => ({
-          type: row.type === 'movie' ? 'movie' : 'series', metaId: row.metaId, rating: row.rating, at: toEpoch(row.at),
+          type: row.scope === 'movie' || row.type === 'movie' ? 'movie' : 'series',
+          metaId: row.metaId,
+          ...(row.scope === 'season' ? { season: row.season } : {}),
+          ...(row.scope === 'episode' ? { videoId: `${row.metaId}:${row.season}:${row.episode}` } : {}),
+          rating: row.rating, at: toEpoch(row.at),
         })) }),
       };
       const validated = PullAnswerSchema.safeParse(answer);

@@ -6,7 +6,7 @@ describe('TraktClient ratings', () => {
 
   function client(key: string) {
     return new TraktClient(
-      { clientId: 'test-client', redirectUri: 'https://example.test/callback', publicBaseUrl: 'https://example.test' },
+      { clientId: 'test-client', clientSecret: 'test-secret' },
       { accessToken: 'access', refreshToken: 'refresh', expiresAt: Date.now() + 60 * 60 * 1000 },
       {} as any,
       undefined,
@@ -85,11 +85,11 @@ describe('TraktClient ratings', () => {
     const persist = vi.fn().mockResolvedValue(undefined);
     const expired = { accessToken: 'old-access', refreshToken: 'single-use-refresh', expiresAt: 0 };
     const first = new TraktClient(
-      { clientId: 'test-client', redirectUri: 'https://example.test/callback', publicBaseUrl: 'https://example.test' },
+      { clientId: 'test-client', clientSecret: 'test-secret' },
       expired, auth as any, persist, 'shared-trakt-account',
     );
     const second = new TraktClient(
-      { clientId: 'test-client', redirectUri: 'https://example.test/callback', publicBaseUrl: 'https://example.test' },
+      { clientId: 'test-client', clientSecret: 'test-secret' },
       expired, auth as any, persist, 'shared-trakt-account',
     );
 

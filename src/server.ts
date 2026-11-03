@@ -1,5 +1,4 @@
 import fastify from 'fastify';
-import cookie from '@fastify/cookie';
 import type { TraktConfig } from './trakt/config.js';
 import { TraktAuth } from './trakt/auth.js';
 import { TraktClient } from './trakt/client.js';
@@ -18,13 +17,8 @@ function requiredEnv(name: string): string {
 
 const config: TraktConfig = {
   clientId: requiredEnv('TRAKT_CLIENT_ID'),
-  clientSecret: process.env.TRAKT_CLIENT_SECRET?.trim() || undefined,
-  redirectUri: requiredEnv('TRAKT_REDIRECT_URI'),
-  publicBaseUrl: requiredEnv('PUBLIC_BASE_URL'),
+  clientSecret: requiredEnv('TRAKT_CLIENT_SECRET'),
 };
-if (new URL(config.redirectUri).protocol !== 'https:') {
-  throw new Error('TRAKT_REDIRECT_URI must use HTTPS; Trakt PKCE no longer accepts localhost redirects');
-}
 // Validate early so token encryption cannot silently fall back to plaintext.
 if (requiredEnv('TOKEN_ENCRYPTION_KEY').length < 32) {
   throw new Error('TOKEN_ENCRYPTION_KEY must contain at least 32 characters');
@@ -32,7 +26,6 @@ if (requiredEnv('TOKEN_ENCRYPTION_KEY').length < 32) {
 
 const databasePath = process.env.DATABASE_URL || `${process.env.DATA_DIR || 'data'}/trakt-sync.db`;
 const app = fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
-await app.register(cookie);
 
 const traktAuth = new TraktAuth(config);
 const db = new DatabaseRepository(databasePath);
