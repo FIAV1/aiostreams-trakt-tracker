@@ -28,7 +28,7 @@ When a change alters durable behavior, operating assumptions, security boundarie
 
 ## Development and verification
 
-- Runtime is Node.js 22 ESM, Fastify, TypeScript, SQLite via `better-sqlite3`, and the AIOStreams addon SDK.
+- Runtime is Node.js 26 ESM, Fastify, TypeScript, SQLite via `better-sqlite3`, and the AIOStreams addon SDK.
 - Install locked dependencies with `npm ci`; run `npm run dev` for local development.
 - Run `npm run typecheck` and `npm test` for application changes. The Docker `test` target is the CI equivalent and also builds the production dependencies from a clean Linux install.
 - Validate `docker-compose.yml` and `docker-compose.test.yml` when changing container configuration. The latter is disposable and uses `.env.test` plus `.test-data/`; never put real secrets in tracked files.

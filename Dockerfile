@@ -1,4 +1,4 @@
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -17,7 +17,7 @@ RUN npm test
 FROM build AS production-deps
 RUN npm prune --omit=dev
 
-FROM node:22-slim AS runtime
+FROM node:26-slim AS runtime
 LABEL org.opencontainers.image.source="https://github.com/FIAV1/aiostreams-trakt-tracker"
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 DATABASE_URL=/data/trakt-sync.db
 WORKDIR /app

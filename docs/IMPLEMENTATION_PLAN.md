@@ -65,7 +65,8 @@
 - [x] Build and publish production GHCR images after validated releases.
 - [x] Add an importable GitHub ruleset that requires PRs and the verification check on `main`.
 - [x] Add an isolated, opt-in Docker Compose stack for manual AIOStreams integration testing.
-- [ ] Import the `main` protection ruleset in GitHub and configure the `RELEASE_PLEASE_TOKEN` Actions secret.
+- [x] Enable GitHub Actions to create and approve pull requests; Release Please created the 1.1.0 release PR after the failed run was retried. Optional `RELEASE_PLEASE_TOKEN` can avoid workflow approval holds for future PRs.
+- [x] Make the repository public and activate the `main` branch ruleset; the `verify` check is passing on the Release Please PR.
 - [ ] Confirm GHCR package visibility is public for anonymous pulls.
 - [ ] Complete live end-to-end validation against a registered Trakt application and connected AIOStreams deployment.
 - [ ] Review and update Trakt OAuth for current app registration: Trakt now recommends PKCE and its app guide describes Client ID-only setup, while this implementation's Device Code token exchange requires a Client Secret. Preserve private-network deployment and avoid introducing a public callback requirement if possible.
@@ -81,3 +82,4 @@
 - Clean dependency installation and production dependency pruning report zero known npm vulnerabilities; obsolete `sqlite3`, Drizzle, and unused runtime dependencies have been removed.
 - Live end-to-end validation still requires a registered Trakt app, browser/AIOStreams reachability to the private tracker, and an AIOStreams instance connected to it. Use a dedicated test Trakt account so sync checks do not change personal watch history, lists, or ratings.
 - Trakt's current [app creation guide](https://developer.trakt.tv/docs/create-an-app) says app creation requires a verified GitHub account and recommends PKCE; its [OAuth guide](https://developer.trakt.tv/docs/authentication-oauth) says client secrets are deprecated for user sign-in. This tracker still uses Device Code Flow and includes a client secret in token exchange and refresh. Confirm compatibility with newly created Trakt apps before claiming current OAuth setup is fully validated; if the Trakt portal does not issue a client secret, OAuth migration is required.
+- GitHub checks on 2026-11-03 initially showed `can_approve_pull_request_reviews: false`; after the owner enabled Actions PR creation, rerunning the workflow succeeded and opened release PR #7 for 1.1.0. The repo is public, the `Protect main` branch ruleset is active, and `verify` passes on PR #7. No Actions secrets are configured; the built-in token is being used. GHCR image publication is skipped until the release PR is merged and the release is created.

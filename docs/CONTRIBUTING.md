@@ -1,6 +1,6 @@
 # Contributing
 
-Changes are proposed through pull requests targeting `main`. The repository ruleset requires a passing `verify` check and squash merging; direct pushes and force pushes to `main` are blocked.
+Changes should be proposed through pull requests targeting `main`. The active branch ruleset requires a passing `verify` check and squash merging, and blocks direct updates, force pushes, and deletion. The tracked `.github/rulesets/main-protection.json` is its import/template definition. GitHub's separate **push rulesets** feature has different plan and visibility restrictions; it is not used here.
 
 ## Pull request titles and commits
 
@@ -21,7 +21,9 @@ Dependabot opens weekly npm and GitHub Actions update pull requests. Patch and m
 
 After releasable changes land on `main`, Release Please opens or updates a release pull request. Review and squash-merge it to create the Git tag and GitHub Release. The release workflow builds and pushes the production image to GHCR only after the validation job passes.
 
-You can run releases without creating a token: Release Please falls back to GitHub Actions' built-in `GITHUB_TOKEN`. However, GitHub may hold workflows triggered by a PR opened with that token for approval. Since the release PR needs the `verify` check, you may have to approve its workflow run manually before merging. A dedicated token lets the release PR's checks start without that manual approval. This is optional convenience, not a prerequisite for Release Please to create releases. See GitHub's [GITHUB_TOKEN workflow behavior](https://docs.github.com/en/actions/concepts/security/github_token).
+You can run releases without creating a token: Release Please falls back to GitHub Actions' built-in `GITHUB_TOKEN`. For that token to open the release PR, enable **Allow GitHub Actions to create and approve pull requests** in [repository Actions settings](https://github.com/FIAV1/aiostreams-trakt-tracker/settings/actions), under **Workflow permissions**. This setting is now enabled. The error `GitHub Actions is not permitted to create or approve pull requests` means this permission is off (or an organization policy prevents it).
+
+With `GITHUB_TOKEN`, GitHub may hold workflows triggered by a PR opened with that token for approval. Since the release PR needs the `verify` check, you may have to approve its workflow run manually before merging. A dedicated token lets the release PR's checks start without that manual approval. This is optional convenience, not a prerequisite for Release Please to create releases. See GitHub's [GITHUB_TOKEN workflow behavior](https://docs.github.com/en/actions/concepts/security/github_token).
 
 ### Optional: create a token to avoid approving release PR workflows
 

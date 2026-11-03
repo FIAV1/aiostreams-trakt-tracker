@@ -8,7 +8,7 @@ A self-hosted bridge between AIOStreams Watch State v2 and Trakt.tv. It stores s
 
 ## Requirements
 
-- Node.js 22 or Docker with Docker Compose
+- Node.js 26 LTS or Docker with Docker Compose
 - A Trakt API application with a client ID and client secret
 
 ## Connect your Trakt account
@@ -103,9 +103,9 @@ The Vitest suite includes unit tests and a service-level integration test that e
 
 ## Contributing and releases
 
-Contributions are welcome through pull requests. See [contributing and release guidelines](docs/CONTRIBUTING.md) for Conventional Commit titles and the automated release process. The repository includes an importable [main protection ruleset](.github/rulesets/main-protection.json); import it from **Settings → Rules → Rulesets** to block direct pushes to `main` and require the `verify` check. GitHub rulesets are repository settings and do not become active just by committing the JSON file. GitHub documents [importing repository rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository).
+Contributions are welcome through pull requests. See [contributing and release guidelines](docs/CONTRIBUTING.md) for Conventional Commit titles and the automated release process. The [main branch ruleset](.github/rulesets/main-protection.json) is active on GitHub: it requires a PR and the `verify` check, allows squash merges only, and blocks force pushes and deletion. The JSON file is the version-controlled template; GitHub enforcement is configured separately. GitHub's notice about disabling **push rulesets** concerns a different ruleset type; it does not disable this branch ruleset. See GitHub's [ruleset documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
 
-The release workflow works with GitHub Actions' built-in token. You can optionally add the `RELEASE_PLEASE_TOKEN` secret to have release PR checks start without manual workflow approval; see the [token setup steps](docs/CONTRIBUTING.md#optional-create-a-token-to-avoid-approving-release-pr-workflows). Also check the GHCR package visibility if you want anonymous pulls.
+The release workflow uses GitHub Actions' built-in token by default. In repository [Actions settings](https://github.com/FIAV1/aiostreams-trakt-tracker/settings/actions), enable **Allow GitHub Actions to create and approve pull requests** under **Workflow permissions**, or Release Please cannot open its release PR. You can optionally add the `RELEASE_PLEASE_TOKEN` secret to have release PR checks start without manual workflow approval; see the [token setup steps](docs/CONTRIBUTING.md#optional-create-a-token-to-avoid-approving-release-pr-workflows). Also check the GHCR package visibility if you want anonymous pulls.
 
 ## License
 
